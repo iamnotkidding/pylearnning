@@ -39,6 +39,10 @@
                 {
                     "name": "홈 버튼",
                     "command": "adb -s ADBID shell input keyevent KEYCODE_HOME"
+                },
+                {
+                    "name": "TIME초 대기",
+                    "command": "adb -s ADBID shell sleep TIME"
                 }
             ]
         },
@@ -60,6 +64,10 @@
                 {
                     "name": "CPU 정보",
                     "command": "adb -s ADBID shell cat /proc/cpuinfo"
+                },
+                {
+                    "name": "TIME초 동안 로그 수집",
+                    "command": "adb -s ADBID shell timeout TIME logcat"
                 }
             ]
         }

@@ -4,6 +4,7 @@ import subprocess
 import json
 import os
 import re
+import threading
 from typing import List, Dict
 
 class ADBManager:
@@ -56,6 +57,11 @@ class ADBManager:
         
         canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # 마우스 휠 스크롤 지원
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
         
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -123,26 +129,40 @@ class ADBManager:
         # 기본 설정 파일이 없으면 생성
         if not os.path.exists(config_file):
             default_config = {
-                "commands": [
+                "columns": [
                     {
-                        "name": "화면 캡처",
-                        "command": "adb -s ADBID shell screencap -p /sdcard/screen.png"
+                        "title": "기본 명령",
+                        "commands": [
+                            {
+                                "name": "화면 캡처",
+                                "command": "adb -s ADBID shell screencap -p /sdcard/screen.png"
+                            },
+                            {
+                                "name": "앱 목록 보기",
+                                "command": "adb -s ADBID shell pm list packages"
+                            },
+                            {
+                                "name": "디바이스 정보",
+                                "command": "adb -s ADBID shell getprop"
+                            }
+                        ]
                     },
                     {
-                        "name": "앱 목록 보기",
-                        "command": "adb -s ADBID shell pm list packages"
-                    },
-                    {
-                        "name": "디바이스 정보",
-                        "command": "adb -s ADBID shell getprop"
-                    },
-                    {
-                        "name": "재부팅",
-                        "command": "adb -s ADBID reboot"
-                    },
-                    {
-                        "name": "로그캣 보기",
-                        "command": "adb -s ADBID logcat -d"
+                        "title": "시스템 제어",
+                        "commands": [
+                            {
+                                "name": "재부팅",
+                                "command": "adb -s ADBID reboot"
+                            },
+                            {
+                                "name": "화면 켜기",
+                                "command": "adb -s ADBID shell input keyevent KEYCODE_WAKEUP"
+                            },
+                            {
+                                "name": "배터리 정보",
+                                "command": "adb -s ADBID shell dumpsys battery"
+                            }
+                        ]
                     }
                 ]
             }
@@ -155,31 +175,58 @@ class ADBManager:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             
-            # 버튼 생성
-            for idx, cmd_info in enumerate(config.get('commands', [])):
-                name = cmd_info.get('name', f'명령 {idx+1}')
-                command = cmd_info.get('command', '')
-                
-                btn = ttk.Button(
-                    self.scrollable_frame,
-                    text=name,
-                    command=lambda c=command: self.execute_command(c)
-                )
-                btn.pack(fill=tk.X, pady=2, padx=5)
+            columns = config.get('columns', [])
             
-            self.log(f"{len(config.get('commands', []))}개 명령 로드 완료")
+            # 각 열에 대한 프레임 생성
+            for col_idx, column in enumerate(columns):
+                # 열 프레임 생성
+                col_frame = ttk.LabelFrame(
+                    self.scrollable_frame,
+                    text=column.get('title', f'열 {col_idx+1}'),
+                    padding="10"
+                )
+                col_frame.grid(row=0, column=col_idx, sticky="nsew", padx=5, pady=5)
+                
+                # 열의 가중치 설정 (동일한 너비로 확장)
+                self.scrollable_frame.grid_columnconfigure(col_idx, weight=1)
+                
+                # 각 명령에 대한 버튼 생성
+                commands = column.get('commands', [])
+                for cmd_idx, cmd_info in enumerate(commands):
+                    name = cmd_info.get('name', f'명령 {cmd_idx+1}')
+                    command = cmd_info.get('command', '')
+                    
+                    btn = ttk.Button(
+                        col_frame,
+                        text=name,
+                        command=lambda c=command: self.execute_command(c)
+                    )
+                    btn.pack(fill=tk.X, pady=2)
+            
+            total_commands = sum(len(col.get('commands', [])) for col in columns)
+            self.log(f"{len(columns)}개 열, {total_commands}개 명령 로드 완료")
             
         except Exception as e:
             messagebox.showerror("오류", f"설정 파일 로드 실패: {str(e)}")
     
     def execute_command(self, command_template: str):
-        """명령어를 실행합니다."""
+        """명령어를 실행합니다 (별도 스레드에서 실행하여 UI blocking 방지)."""
         selected = self.device_combo.get()
         
         if not selected:
             messagebox.showwarning("경고", "장치를 선택하세요.")
             return
         
+        # 별도 스레드에서 명령 실행
+        thread = threading.Thread(
+            target=self._execute_command_thread,
+            args=(command_template, selected),
+            daemon=True
+        )
+        thread.start()
+    
+    def _execute_command_thread(self, command_template: str, selected: str):
+        """별도 스레드에서 명령을 실행합니다."""
         # 실행할 명령어 목록
         commands_to_run = []
         
@@ -204,7 +251,8 @@ class ADBManager:
                     capture_output=True,
                     text=True,
                     shell=True,
-                    encoding='utf-8'
+                    encoding='utf-8',
+                    timeout=30  # 30초 타임아웃
                 )
                 
                 if result.stdout:
@@ -212,14 +260,19 @@ class ADBManager:
                 if result.stderr:
                     self.log(f"[{device_id}] 에러:\n{result.stderr}")
                     
+            except subprocess.TimeoutExpired:
+                self.log(f"[{device_id}] 타임아웃: 명령 실행 시간 초과")
             except Exception as e:
                 self.log(f"[{device_id}] 실행 실패: {str(e)}")
     
     def log(self, message: str):
-        """로그 텍스트 위젯에 메시지를 추가합니다."""
-        self.log_text.insert(tk.END, message + "\n")
-        self.log_text.see(tk.END)
-        self.root.update()
+        """로그 텍스트 위젯에 메시지를 추가합니다 (스레드 안전)."""
+        def _update_log():
+            self.log_text.insert(tk.END, message + "\n")
+            self.log_text.see(tk.END)
+        
+        # 메인 스레드에서 UI 업데이트
+        self.root.after(0, _update_log)
 
 def main():
     root = tk.Tk()

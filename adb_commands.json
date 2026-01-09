@@ -1,0 +1,36 @@
+{
+    "commands": [
+        {
+            "name": "화면 캡처",
+            "command": "adb -s ADBID shell screencap -p /sdcard/screen.png"
+        },
+        {
+            "name": "앱 목록 보기",
+            "command": "adb -s ADBID shell pm list packages"
+        },
+        {
+            "name": "디바이스 정보",
+            "command": "adb -s ADBID shell getprop"
+        },
+        {
+            "name": "배터리 정보",
+            "command": "adb -s ADBID shell dumpsys battery"
+        },
+        {
+            "name": "화면 켜기",
+            "command": "adb -s ADBID shell input keyevent KEYCODE_WAKEUP"
+        },
+        {
+            "name": "재부팅",
+            "command": "adb -s ADBID reboot"
+        },
+        {
+            "name": "로그캣 보기 (최근 100줄)",
+            "command": "adb -s ADBID logcat -d -t 100"
+        },
+        {
+            "name": "설치된 앱 목록",
+            "command": "adb -s ADBID shell pm list packages -3"
+        }
+    ]
+}

@@ -11,10 +11,13 @@ class ADBManager:
     def __init__(self, root):
         self.root = root
         self.root.title("ADB Device Manager")
-        self.root.geometry("800x600")
+        self.root.geometry("900x600")
         
         # ADB 장치 목록
         self.devices = []
+        
+        # 순차 실행 여부
+        self.sequential_var = tk.BooleanVar(value=True)
         
         # UI 구성
         self.setup_ui()
@@ -32,11 +35,34 @@ class ADBManager:
         
         ttk.Label(top_frame, text="ADB Device:").pack(side=tk.LEFT, padx=5)
         
-        self.device_combo = ttk.Combobox(top_frame, width=60, state="readonly")
+        self.device_combo = ttk.Combobox(top_frame, width=50, state="readonly")
         self.device_combo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
         refresh_btn = ttk.Button(top_frame, text="새로고침", command=self.refresh_devices)
         refresh_btn.pack(side=tk.LEFT, padx=5)
+        
+        # 옵션 프레임 (순차 실행 옵션, TIME 입력)
+        option_frame = ttk.Frame(self.root, padding="5 0 10 5")
+        option_frame.pack(fill=tk.X)
+        
+        # 순차 실행 체크박스
+        sequential_check = ttk.Checkbutton(
+            option_frame,
+            text="All Devices 순차 실행",
+            variable=self.sequential_var
+        )
+        sequential_check.pack(side=tk.LEFT, padx=5)
+        
+        # 구분선
+        ttk.Separator(option_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        
+        # TIME 입력 필드
+        ttk.Label(option_frame, text="TIME (초):").pack(side=tk.LEFT, padx=5)
+        self.time_entry = ttk.Entry(option_frame, width=10)
+        self.time_entry.insert(0, "5")
+        self.time_entry.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(option_frame, text="(명령어에 TIME 사용 가능)").pack(side=tk.LEFT, padx=5)
         
         # 구분선
         ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
@@ -217,15 +243,25 @@ class ADBManager:
             messagebox.showwarning("경고", "장치를 선택하세요.")
             return
         
+        # TIME 값 가져오기
+        try:
+            time_value = self.time_entry.get().strip()
+            if not time_value:
+                time_value = "0"
+            time_seconds = str(float(time_value))
+        except ValueError:
+            messagebox.showerror("오류", "TIME 값은 숫자여야 합니다.")
+            return
+        
         # 별도 스레드에서 명령 실행
         thread = threading.Thread(
             target=self._execute_command_thread,
-            args=(command_template, selected),
+            args=(command_template, selected, time_seconds),
             daemon=True
         )
         thread.start()
     
-    def _execute_command_thread(self, command_template: str, selected: str):
+    def _execute_command_thread(self, command_template: str, selected: str, time_value: str):
         """별도 스레드에서 명령을 실행합니다."""
         # 실행할 명령어 목록
         commands_to_run = []
@@ -234,15 +270,25 @@ class ADBManager:
             # 모든 장치에 대해 실행
             for device in self.devices:
                 device_id = self.extract_device_id(device)
-                cmd = command_template.replace("ADBID", device_id)
+                cmd = command_template.replace("ADBID", device_id).replace("TIME", time_value)
                 commands_to_run.append((device_id, cmd))
+            
+            # 순차 실행 여부에 따라 실행 방식 결정
+            if self.sequential_var.get():
+                self.log("\n=== 순차 실행 모드 ===")
+                self._execute_sequential(commands_to_run)
+            else:
+                self.log("\n=== 동시 실행 모드 ===")
+                self._execute_parallel(commands_to_run)
         else:
             # 선택된 장치에 대해서만 실행
             device_id = self.extract_device_id(selected)
-            cmd = command_template.replace("ADBID", device_id)
+            cmd = command_template.replace("ADBID", device_id).replace("TIME", time_value)
             commands_to_run.append((device_id, cmd))
-        
-        # 명령 실행
+            self._execute_sequential(commands_to_run)
+    
+    def _execute_sequential(self, commands_to_run):
+        """명령을 순차적으로 실행합니다."""
         for device_id, cmd in commands_to_run:
             self.log(f"\n[{device_id}] 실행: {cmd}")
             try:
@@ -264,6 +310,44 @@ class ADBManager:
                 self.log(f"[{device_id}] 타임아웃: 명령 실행 시간 초과")
             except Exception as e:
                 self.log(f"[{device_id}] 실행 실패: {str(e)}")
+    
+    def _execute_parallel(self, commands_to_run):
+        """명령을 동시에 실행합니다."""
+        threads = []
+        
+        def run_command(device_id, cmd):
+            self.log(f"\n[{device_id}] 실행: {cmd}")
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    shell=True,
+                    encoding='utf-8',
+                    timeout=30
+                )
+                
+                if result.stdout:
+                    self.log(f"[{device_id}] 출력:\n{result.stdout}")
+                if result.stderr:
+                    self.log(f"[{device_id}] 에러:\n{result.stderr}")
+                    
+            except subprocess.TimeoutExpired:
+                self.log(f"[{device_id}] 타임아웃: 명령 실행 시간 초과")
+            except Exception as e:
+                self.log(f"[{device_id}] 실행 실패: {str(e)}")
+        
+        # 각 장치에 대해 별도 스레드 생성
+        for device_id, cmd in commands_to_run:
+            thread = threading.Thread(target=run_command, args=(device_id, cmd), daemon=True)
+            threads.append(thread)
+            thread.start()
+        
+        # 모든 스레드가 완료될 때까지 대기
+        for thread in threads:
+            thread.join()
+        
+        self.log("\n=== 모든 장치 실행 완료 ===")
     
     def log(self, message: str):
         """로그 텍스트 위젯에 메시지를 추가합니다 (스레드 안전)."""

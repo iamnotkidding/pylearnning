@@ -338,3 +338,120 @@ JSON 파일의 최상위에 `window` 객체를 추가하여 윈도우 크기를 
 ```
 실행 결과:
 - `screenshot_20260110_143025.png`
+
+## JSON 설정 파일 구조
+
+### settings 섹션
+초기값 및 환경 설정을 지정합니다:
+
+```json
+{
+    "settings": {
+        "adb_path": "C:\\platform-tools",
+        "use_custom_adb_path": true,
+        "testtime": 10,
+        "pair_count": 3
+    },
+    "window": {
+        "width": 1200,
+        "height": 700
+    },
+    "columns": [...]
+}
+```
+
+#### settings 항목 설명
+
+| 항목 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `adb_path` | string | `""` | ADB 실행 경로 (빈 문자열이면 현재 경로) |
+| `use_custom_adb_path` | boolean | `false` | 사용자 지정 ADB 경로 사용 여부 |
+| `testtime` | integer | `5` | [TESTTIME] 변수의 초기값 (초) |
+| `pair_count` | integer | `2` | 짝지을 보드 대수 초기값 |
+
+#### 예시
+
+**기본 설정 (현재 경로 사용)**
+```json
+{
+    "settings": {
+        "adb_path": "",
+        "use_custom_adb_path": false,
+        "testtime": 5,
+        "pair_count": 2
+    }
+}
+```
+
+**사용자 지정 경로 사용**
+```json
+{
+    "settings": {
+        "adb_path": "C:\\Users\\MyUser\\android-sdk\\platform-tools",
+        "use_custom_adb_path": true,
+        "testtime": 10,
+        "pair_count": 4
+    }
+}
+```
+
+**Linux/Mac 경로**
+```json
+{
+    "settings": {
+        "adb_path": "/home/user/android-sdk/platform-tools",
+        "use_custom_adb_path": true,
+        "testtime": 3,
+        "pair_count": 2
+    }
+}
+```
+
+### 전체 설정 예시
+
+```json
+{
+    "settings": {
+        "adb_path": "C:\\platform-tools",
+        "use_custom_adb_path": true,
+        "testtime": 10,
+        "pair_count": 3
+    },
+    "window": {
+        "width": 1400,
+        "height": 800
+    },
+    "columns": [
+        {
+            "title": "기본 명령",
+            "commands": [
+                {
+                    "name": "화면 캡처",
+                    "command": "adb -s [ADBID] shell screencap -p /sdcard/screen.png"
+                },
+                {
+                    "name": "[TESTTIME]초 대기",
+                    "command": "adb -s [ADBID] shell sleep [TESTTIME]"
+                }
+            ]
+        },
+        {
+            "title": "그룹 명령",
+            "commands": [
+                {
+                    "name": "그룹 정보",
+                    "command": "echo Devices: [ADBIDS]"
+                }
+            ]
+        }
+    ]
+}
+```
+
+### 주의사항
+
+- `adb_path`는 **adb.exe가 있는 디렉토리** 경로를 지정합니다
+- Windows 경로는 백슬래시를 이중으로 입력: `C:\\path\\to\\adb`
+- `use_custom_adb_path`가 `false`면 `adb_path` 값은 무시됩니다
+- `testtime`과 `pair_count`는 UI에서 변경 가능하며, 여기서는 초기값만 지정합니다
+- settings 섹션을 생략하면 모든 값이 기본값으로 설정됩니다

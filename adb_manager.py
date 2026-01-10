@@ -6,6 +6,7 @@ import os
 import re
 import threading
 from typing import List, Dict
+from datetime import datetime
 
 class ADBManager:
     def __init__(self, root):
@@ -81,7 +82,7 @@ class ADBManager:
         self.browse_btn = ttk.Button(adb_path_frame, text="찾아보기", command=self.browse_adb_path, state="disabled")
         self.browse_btn.pack(side=tk.LEFT, padx=5)
         
-        # 옵션 프레임 (순차 실행 옵션, TIME 입력)
+        # 옵션 프레임 (순차 실행 옵션, [TESTTIME] 입력)
         option_frame = ttk.Frame(self.root, padding="5 0 10 5")
         option_frame.pack(fill=tk.X)
         
@@ -96,8 +97,8 @@ class ADBManager:
         # 구분선
         ttk.Separator(option_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        # TIME 입력 필드
-        ttk.Label(option_frame, text="TIME (초):").pack(side=tk.LEFT, padx=5)
+        # [TESTTIME] 입력 필드
+        ttk.Label(option_frame, text="[TESTTIME] (초):").pack(side=tk.LEFT, padx=5)
         self.time_entry = ttk.Entry(option_frame, width=10)
         self.time_entry.insert(0, "5")
         self.time_entry.pack(side=tk.LEFT, padx=5)
@@ -111,7 +112,7 @@ class ADBManager:
         self.pair_count_entry.insert(0, "2")
         self.pair_count_entry.pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(option_frame, text="(변수: ADBID, ADBNUM, ADBIDS, TIME)").pack(side=tk.LEFT, padx=5)
+        ttk.Label(option_frame, text="(변수: [ADBID], [ADBNUM], [[ADBID]S], [TESTTIME])").pack(side=tk.LEFT, padx=5)
         
         # 구분선
         ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
@@ -210,7 +211,7 @@ class ADBManager:
                         self.devices.append(line)
             
             # 콤보박스 업데이트
-            device_list = ["all devices"] + self.devices
+            device_list = ["All Devices"] + self.devices
             self.device_combo['values'] = device_list
             
             if device_list:
@@ -271,15 +272,15 @@ class ADBManager:
                         "commands": [
                             {
                                 "name": "화면 캡처",
-                                "command": "adb -s ADBID shell screencap -p /sdcard/screen.png"
+                                "command": "adb -s [ADBID] shell screencap -p /sdcard/screen.png"
                             },
                             {
                                 "name": "앱 목록 보기",
-                                "command": "adb -s ADBID shell pm list packages"
+                                "command": "adb -s [ADBID] shell pm list packages"
                             },
                             {
                                 "name": "디바이스 정보",
-                                "command": "adb -s ADBID shell getprop"
+                                "command": "adb -s [ADBID] shell getprop"
                             }
                         ]
                     },
@@ -288,15 +289,15 @@ class ADBManager:
                         "commands": [
                             {
                                 "name": "재부팅",
-                                "command": "adb -s ADBID reboot"
+                                "command": "adb -s [ADBID] reboot"
                             },
                             {
                                 "name": "화면 켜기",
-                                "command": "adb -s ADBID shell input keyevent KEYCODE_WAKEUP"
+                                "command": "adb -s [ADBID] shell input keyevent KEYCODE_WAKEUP"
                             },
                             {
                                 "name": "배터리 정보",
-                                "command": "adb -s ADBID shell dumpsys battery"
+                                "command": "adb -s [ADBID] shell dumpsys battery"
                             }
                         ]
                     }
@@ -367,21 +368,24 @@ class ADBManager:
             messagebox.showwarning("경고", "장치를 선택하세요.")
             return
         
-        # ADBIDS가 포함된 명령어는 all devices만 가능
-        if "ADBIDS" in command_template:
-            if selected != "all devices":
-                messagebox.showwarning("경고", "ADBIDS 변수는 'all devices' 선택 시에만 사용 가능합니다.")
+        # [ADBIDS]가 포함된 명령어는 All Devices만 가능
+        if "[ADBIDS]" in command_template:
+            if selected != "All Devices":
+                messagebox.showwarning("경고", "[ADBIDS] 변수는 'All Devices' 선택 시에만 사용 가능합니다.")
                 return
         
-        # TIME 값 가져오기 (int로 변환)
+        # [TESTTIME] 값 가져오기 (int로 변환)
         try:
             time_value = self.time_entry.get().strip()
             if not time_value:
                 time_value = "0"
             time_seconds = str(int(float(time_value)))  # int로 변환
         except ValueError:
-            messagebox.showerror("오류", "TIME 값은 정수여야 합니다.")
+            messagebox.showerror("오류", "[TESTTIME] 값은 정수여야 합니다.")
             return
+        
+        # [CURTIME] 값 생성 (현재 날짜시간)
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # 짝지을 보드 대수 가져오기
         try:
@@ -394,7 +398,7 @@ class ADBManager:
         
         # 실행할 장치 목록 결정
         devices_to_run = []
-        if selected == "all devices":
+        if selected == "All Devices":
             devices_to_run = [self.extract_device_id(device) for device in self.devices]
         else:
             devices_to_run = [self.extract_device_id(selected)]
@@ -408,7 +412,7 @@ class ADBManager:
         # 별도 스레드에서 명령 실행
         thread = threading.Thread(
             target=self._execute_command_thread,
-            args=(command_template, selected, time_seconds, pair_count),
+            args=(command_template, selected, time_seconds, current_time, pair_count),
             daemon=True
         )
         thread.start()
@@ -438,11 +442,11 @@ class ADBManager:
         if device_id in self.running_threads:
             del self.running_threads[device_id]
     
-    def _execute_command_thread(self, command_template: str, selected: str, time_value: str, pair_count: int):
+    def _execute_command_thread(self, command_template: str, selected: str, time_value: str, current_time: str, pair_count: int):
         """별도 스레드에서 명령을 실행합니다."""
-        # ADBIDS 명령어 처리
-        if "ADBIDS" in command_template:
-            # all devices 모드에서만 실행 (이미 검증됨)
+        # [ADBIDS] 명령어 처리
+        if "[ADBIDS]" in command_template:
+            # All Devices 모드에서만 실행 (이미 검증됨)
             device_ids = [self.extract_device_id(device) for device in self.devices]
             
             # 짝지을 보드 대수만큼 묶어서 실행
@@ -453,11 +457,14 @@ class ADBManager:
                 
                 # 실제로 묶인 장치가 있을 때만 실행
                 if paired_devices:
-                    # ADBIDS: 쉼표로 연결 (공백 없이)
+                    # [ADBIDS]: 쉼표로 연결 (공백 없이)
                     adbids_value = ",".join(paired_devices)
                     
-                    # 명령어 생성 (ADBIDS만 치환, ADBID/ADBNUM/TIME은 사용 안 함)
-                    cmd = command_template.replace("ADBIDS", adbids_value).replace("TIME", time_value)
+                    # 명령어 생성 ([ADBIDS]만 치환, [ADBID]/[ADBNUM]/[TESTTIME]은 사용 안 함)
+                    cmd = (command_template
+                           .replace("[ADBIDS]", adbids_value)
+                           .replace("[TESTTIME]", time_value)
+                           .replace("[CURTIME]", current_time))
                     
                     # ADB 경로 적용
                     cmd = self.get_adb_command(cmd)
@@ -468,24 +475,25 @@ class ADBManager:
             
             # 순차/동시 실행
             if self.sequential_var.get():
-                self.log("\n=== 순차 실행 모드 (ADBIDS) ===")
+                self.log("\n=== 순차 실행 모드 ([ADBIDS]) ===")
                 self._execute_sequential_groups(commands_to_run)
             else:
-                self.log("\n=== 동시 실행 모드 (ADBIDS) ===")
+                self.log("\n=== 동시 실행 모드 ([ADBIDS]) ===")
                 self._execute_parallel_groups(commands_to_run)
         else:
-            # 기존 로직 (ADBID, ADBNUM 사용)
+            # 기존 로직 ([ADBID], [ADBNUM] 사용)
             commands_to_run = []
             
-            if selected == "all devices":
+            if selected == "All Devices":
                 # 모든 장치에 대해 실행
                 for idx, device in enumerate(self.devices):
                     device_id = self.extract_device_id(device)
                     device_num = str(idx + 1)  # 1부터 시작하는 인덱스
                     cmd = (command_template
-                           .replace("ADBID", device_id)
-                           .replace("ADBNUM", device_num)
-                           .replace("TIME", time_value))
+                           .replace("[ADBID]", device_id)
+                           .replace("[ADBNUM]", device_num)
+                           .replace("[TESTTIME]", time_value)
+                           .replace("[CURTIME]", current_time))
                     
                     # ADB 경로 적용
                     cmd = self.get_adb_command(cmd)
@@ -511,9 +519,10 @@ class ADBManager:
                         break
                 
                 cmd = (command_template
-                       .replace("ADBID", device_id)
-                       .replace("ADBNUM", device_num)
-                       .replace("TIME", time_value))
+                       .replace("[ADBID]", device_id)
+                       .replace("[ADBNUM]", device_num)
+                       .replace("[TESTTIME]", time_value)
+                       .replace("[CURTIME]", current_time))
                 
                 # ADB 경로 적용
                 cmd = self.get_adb_command(cmd)
@@ -522,7 +531,7 @@ class ADBManager:
                 self._execute_sequential(commands_to_run)
     
     def _execute_sequential_groups(self, commands_to_run):
-        """ADBIDS 그룹 명령을 순차적으로 실행합니다."""
+        """[[ADBID]S] 그룹 명령을 순차적으로 실행합니다."""
         for group_id, cmd, device_ids in commands_to_run:
             self.log(f"\n[그룹: {','.join(device_ids)}] 실행: {cmd}")
             
@@ -580,7 +589,7 @@ class ADBManager:
                         del self.cancel_flags[device_id]
     
     def _execute_parallel_groups(self, commands_to_run):
-        """ADBIDS 그룹 명령을 동시에 실행합니다."""
+        """[[ADBID]S] 그룹 명령을 동시에 실행합니다."""
         threads = []
         
         def run_group_command(group_id, cmd, device_ids):

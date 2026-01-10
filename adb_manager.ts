@@ -20,7 +20,15 @@ interface WindowConfig {
     height: number;
 }
 
+interface Settings {
+    adb_path?: string;
+    use_custom_adb_path?: boolean;
+    testtime?: number;
+    pair_count?: number;
+}
+
 interface Config {
+    settings?: Settings;
     window?: WindowConfig;
     columns: Column[];
 }
@@ -86,6 +94,12 @@ class ADBManager {
 
         if (!fs.existsSync(configFile)) {
             const defaultConfig: Config = {
+                settings: {
+                    adb_path: '',
+                    use_custom_adb_path: false,
+                    testtime: 5,
+                    pair_count: 2
+                },
                 window: {
                     width: 1200,
                     height: 700
@@ -109,7 +123,7 @@ class ADBManager {
                         commands: [
                             {
                                 name: '그룹 장치 정보',
-                                command: 'echo Devices: [[ADBID]S]'
+                                command: 'echo Devices: [ADBIDS]'
                             }
                         ]
                     }
@@ -122,6 +136,31 @@ class ADBManager {
 
         const configData = fs.readFileSync(configFile, 'utf-8');
         this.config = JSON.parse(configData);
+        
+        // settings 로드 및 적용
+        if (this.config?.settings) {
+            const settings = this.config.settings;
+            
+            // ADB 경로 설정
+            if (settings.adb_path) {
+                this.adbPath = settings.adb_path;
+            }
+            if (settings.use_custom_adb_path !== undefined) {
+                this.useCustomAdbPath = settings.use_custom_adb_path;
+            }
+            
+            // TESTTIME 초기값
+            if (settings.testtime !== undefined) {
+                this.timeValue = settings.testtime;
+            }
+            
+            // 짝지을 보드 대수 초기값
+            if (settings.pair_count !== undefined) {
+                this.pairCount = settings.pair_count;
+            }
+            
+            console.log(`설정 로드: ADB경로=${this.useCustomAdbPath ? this.adbPath : '현재경로'}, TESTTIME=${this.timeValue}, 짝지을보드=${this.pairCount}`);
+        }
         
         // 윈도우 크기 정보 출력 (GUI 앱에서 사용)
         if (this.config?.window) {
@@ -231,7 +270,7 @@ class ADBManager {
     }
 
     /**
-     * [[ADBID]S] 명령을 실행합니다
+     * [ADBIDS] 명령을 실행합니다
      */
     private async executeAdbidsCommand(commandTemplate: string, current_time: string): Promise<void> {
         const deviceIds = this.devices.map(d => d.id);
@@ -244,8 +283,8 @@ class ADBManager {
 
         console.log(
             this.sequentialMode
-                ? '\n=== 순차 실행 모드 ([[ADBID]S]) ==='
-                : '\n=== 동시 실행 모드 ([[ADBID]S]) ==='
+                ? '\n=== 순차 실행 모드 ([ADBIDS]) ==='
+                : '\n=== 동시 실행 모드 ([ADBIDS]) ==='
         );
 
         if (this.sequentialMode) {
@@ -506,9 +545,9 @@ async function main() {
             'All Devices'
         );
 
-        // [[ADBID]S] 그룹 명령
+        // [ADBIDS] 그룹 명령
         await manager.executeCommand(
-            'echo Processing: [[ADBID]S]',
+            'echo Processing: [ADBIDS]',
             'All Devices'
         );
     } catch (error) {
@@ -517,7 +556,7 @@ async function main() {
 }
 
 // 모듈로 내보내기
-export { ADBManager, Command, Column, WindowConfig, Config, DeviceInfo };
+export { ADBManager, Command, Column, WindowConfig, Settings, Config, DeviceInfo };
 
 // 직접 실행 시
 if (require.main === module) {

@@ -244,3 +244,46 @@ for device in devices:
 - ADBIDS 값에는 공백이 없고 쉼표(,)만 포함됩니다
 - 그룹 실행 시 모든 장치의 이전 명령이 취소됩니다
 - 동시 실행 시 로그 출력 순서가 뒤섞일 수 있습니다
+
+## JSON 설정 파일 구조
+
+### 윈도우 크기 설정
+JSON 파일의 최상위에 `window` 객체를 추가하여 윈도우 크기를 지정할 수 있습니다:
+
+```json
+{
+    "window": {
+        "width": 1200,
+        "height": 700
+    },
+    "columns": [
+        ...
+    ]
+}
+```
+
+- `width`: 윈도우 가로 크기 (픽셀)
+- `height`: 윈도우 세로 크기 (픽셀)
+- 설정하지 않으면 기본값 사용
+
+### 전체 설정 예시
+
+```json
+{
+    "window": {
+        "width": 1400,
+        "height": 800
+    },
+    "columns": [
+        {
+            "title": "기본 명령",
+            "commands": [
+                {
+                    "name": "화면 캡처",
+                    "command": "adb -s ADBID shell screencap -p /sdcard/screen.png"
+                }
+            ]
+        }
+    ]
+}
+```

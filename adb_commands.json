@@ -1,4 +1,8 @@
 {
+    "window": {
+        "width": 1200,
+        "height": 700
+    },
     "columns": [
         {
             "title": "기본 명령",

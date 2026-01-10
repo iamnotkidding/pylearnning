@@ -112,7 +112,7 @@ class ADBManager:
         self.pair_count_entry.insert(0, "2")
         self.pair_count_entry.pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(option_frame, text="(변수: [ADBID], [ADBNUM], [[ADBID]S], [TESTTIME])").pack(side=tk.LEFT, padx=5)
+        ttk.Label(option_frame, text="(변수: [ADBID], [ADBNUM], [ADBIDS], [TESTTIME])").pack(side=tk.LEFT, padx=5)
         
         # 구분선
         ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
@@ -262,6 +262,12 @@ class ADBManager:
         # 기본 설정 파일이 없으면 생성
         if not os.path.exists(config_file):
             default_config = {
+                "settings": {
+                    "adb_path": "",
+                    "use_custom_adb_path": False,
+                    "testtime": 5,
+                    "pair_count": 2
+                },
                 "window": {
                     "width": 1000,
                     "height": 650
@@ -311,6 +317,33 @@ class ADBManager:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+            
+            # settings 로드 및 적용
+            if 'settings' in config:
+                settings = config['settings']
+                
+                # ADB 경로 설정
+                adb_path = settings.get('adb_path', '')
+                use_custom = settings.get('use_custom_adb_path', False)
+                
+                if adb_path:
+                    self.adb_path_entry.delete(0, tk.END)
+                    self.adb_path_entry.insert(0, adb_path)
+                
+                self.use_custom_adb_path.set(use_custom)
+                self.toggle_adb_path()
+                
+                # TESTTIME 초기값 설정
+                testtime = settings.get('testtime', 5)
+                self.time_entry.delete(0, tk.END)
+                self.time_entry.insert(0, str(testtime))
+                
+                # 짝지을 보드 대수 초기값 설정
+                pair_count = settings.get('pair_count', 2)
+                self.pair_count_entry.delete(0, tk.END)
+                self.pair_count_entry.insert(0, str(pair_count))
+                
+                self.log(f"설정 로드: ADB경로={adb_path if use_custom else '현재경로'}, TESTTIME={testtime}, 짝지을보드={pair_count}")
             
             # 윈도우 크기 설정 (설정이 있으면 적용)
             if 'window' in config:
@@ -531,7 +564,7 @@ class ADBManager:
                 self._execute_sequential(commands_to_run)
     
     def _execute_sequential_groups(self, commands_to_run):
-        """[[ADBID]S] 그룹 명령을 순차적으로 실행합니다."""
+        """[ADBIDS] 그룹 명령을 순차적으로 실행합니다."""
         for group_id, cmd, device_ids in commands_to_run:
             self.log(f"\n[그룹: {','.join(device_ids)}] 실행: {cmd}")
             
@@ -589,7 +622,7 @@ class ADBManager:
                         del self.cancel_flags[device_id]
     
     def _execute_parallel_groups(self, commands_to_run):
-        """[[ADBID]S] 그룹 명령을 동시에 실행합니다."""
+        """[ADBIDS] 그룹 명령을 동시에 실행합니다."""
         threads = []
         
         def run_group_command(group_id, cmd, device_ids):

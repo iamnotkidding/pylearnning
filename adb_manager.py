@@ -11,13 +11,26 @@ class ADBManager:
     def __init__(self, root):
         self.root = root
         self.root.title("ADB Device Manager")
-        self.root.geometry("900x600")
+        self.root.geometry("950x600")
         
         # ADB 장치 목록
         self.devices = []
         
         # 순차 실행 여부
         self.sequential_var = tk.BooleanVar(value=True)
+        
+        # 장치별 실행 중인 프로세스 관리 (device_id -> process)
+        self.running_processes = {}
+        
+        # 장치별 실행 중인 스레드 관리 (device_id -> thread)
+        self.running_threads = {}
+        
+        # 장치별 취소 플래그 (device_id -> threading.Event)
+        self.cancel_flags = {}
+        
+        # 버튼 히스토리 (최대 5개까지 색상 유지)
+        self.button_history = []
+        self.button_colors = ['#90EE90', '#A8F5A8', '#C0FFC0', '#D8FFD8', '#F0FFF0']  # 초록색 그라데이션
         
         # UI 구성
         self.setup_ui()
@@ -62,7 +75,16 @@ class ADBManager:
         self.time_entry.insert(0, "5")
         self.time_entry.pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(option_frame, text="(명령어에 TIME 사용 가능)").pack(side=tk.LEFT, padx=5)
+        # 구분선
+        ttk.Separator(option_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        
+        # 짝지을 보드 대수 입력 필드
+        ttk.Label(option_frame, text="짝지을 보드 대수:").pack(side=tk.LEFT, padx=5)
+        self.pair_count_entry = ttk.Entry(option_frame, width=10)
+        self.pair_count_entry.insert(0, "2")
+        self.pair_count_entry.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(option_frame, text="(변수: ADBID, ADBNUM, ADBIDS, TIME)").pack(side=tk.LEFT, padx=5)
         
         # 구분선
         ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
@@ -140,6 +162,30 @@ class ADBManager:
             messagebox.showerror("오류", "ADB를 찾을 수 없습니다. ADB가 설치되어 있고 PATH에 등록되어 있는지 확인하세요.")
         except Exception as e:
             messagebox.showerror("오류", f"장치 목록 로드 실패: {str(e)}")
+    
+    def on_button_click(self, button, command_template):
+        """버튼 클릭 시 호출되는 핸들러"""
+        # 버튼 히스토리 업데이트
+        if button in self.button_history:
+            self.button_history.remove(button)
+        self.button_history.insert(0, button)
+        
+        # 최대 5개까지만 유지
+        if len(self.button_history) > 5:
+            old_button = self.button_history.pop()
+            old_button.config(bg='SystemButtonFace')
+        
+        # 버튼 색상 업데이트
+        self.update_button_colors()
+        
+        # 명령 실행
+        self.execute_command(command_template)
+    
+    def update_button_colors(self):
+        """버튼 히스토리에 따라 색상 업데이트"""
+        for idx, button in enumerate(self.button_history):
+            if idx < len(self.button_colors):
+                button.config(bg=self.button_colors[idx])
     
     def extract_device_id(self, device_string: str) -> str:
         """장치 문자열에서 ADB ID를 추출합니다."""
@@ -222,11 +268,17 @@ class ADBManager:
                     name = cmd_info.get('name', f'명령 {cmd_idx+1}')
                     command = cmd_info.get('command', '')
                     
-                    btn = ttk.Button(
+                    btn = tk.Button(
                         col_frame,
                         text=name,
-                        command=lambda c=command: self.execute_command(c)
+                        command=lambda c=command, b=None: self.on_button_click(b, c),
+                        relief=tk.RAISED,
+                        borderwidth=2,
+                        padx=10,
+                        pady=5
                     )
+                    # 버튼에 자기 자신을 참조하도록 설정
+                    btn.config(command=lambda c=command, b=btn: self.on_button_click(b, c))
                     btn.pack(fill=tk.X, pady=2)
             
             total_commands = sum(len(col.get('commands', [])) for col in columns)
@@ -243,6 +295,12 @@ class ADBManager:
             messagebox.showwarning("경고", "장치를 선택하세요.")
             return
         
+        # ADBIDS가 포함된 명령어는 all devices만 가능
+        if "ADBIDS" in command_template:
+            if selected != "all devices":
+                messagebox.showwarning("경고", "ADBIDS 변수는 'all devices' 선택 시에만 사용 가능합니다.")
+                return
+        
         # TIME 값 가져오기
         try:
             time_value = self.time_entry.get().strip()
@@ -253,93 +311,373 @@ class ADBManager:
             messagebox.showerror("오류", "TIME 값은 숫자여야 합니다.")
             return
         
+        # 짝지을 보드 대수 가져오기
+        try:
+            pair_count = int(self.pair_count_entry.get().strip())
+            if pair_count < 1:
+                raise ValueError("짝지을 보드 대수는 1 이상이어야 합니다.")
+        except ValueError as e:
+            messagebox.showerror("오류", f"짝지을 보드 대수 오류: {str(e)}")
+            return
+        
+        # 실행할 장치 목록 결정
+        devices_to_run = []
+        if selected == "all devices":
+            devices_to_run = [self.extract_device_id(device) for device in self.devices]
+        else:
+            devices_to_run = [self.extract_device_id(selected)]
+        
+        # 각 장치에 대해 이전 실행 중인 명령 취소
+        for device_id in devices_to_run:
+            if device_id in self.running_processes:
+                # 이전 프로세스 종료
+                self.cancel_device_command(device_id)
+        
         # 별도 스레드에서 명령 실행
         thread = threading.Thread(
             target=self._execute_command_thread,
-            args=(command_template, selected, time_seconds),
+            args=(command_template, selected, time_seconds, pair_count),
             daemon=True
         )
         thread.start()
     
-    def _execute_command_thread(self, command_template: str, selected: str, time_value: str):
-        """별도 스레드에서 명령을 실행합니다."""
-        # 실행할 명령어 목록
-        commands_to_run = []
+    def cancel_device_command(self, device_id: str):
+        """특정 장치의 실행 중인 명령을 취소합니다."""
+        # 취소 플래그 설정
+        if device_id in self.cancel_flags:
+            self.cancel_flags[device_id].set()
         
-        if selected == "all devices":
-            # 모든 장치에 대해 실행
-            for device in self.devices:
-                device_id = self.extract_device_id(device)
-                cmd = command_template.replace("ADBID", device_id).replace("TIME", time_value)
-                commands_to_run.append((device_id, cmd))
+        # 실행 중인 프로세스 종료
+        if device_id in self.running_processes:
+            process = self.running_processes[device_id]
+            try:
+                process.terminate()
+                process.wait(timeout=2)
+            except:
+                try:
+                    process.kill()
+                except:
+                    pass
             
-            # 순차 실행 여부에 따라 실행 방식 결정
+            self.log(f"[{device_id}] 이전 명령 취소됨", "red")
+            del self.running_processes[device_id]
+        
+        # 스레드 정보 제거
+        if device_id in self.running_threads:
+            del self.running_threads[device_id]
+    
+    def _execute_command_thread(self, command_template: str, selected: str, time_value: str, pair_count: int):
+        """별도 스레드에서 명령을 실행합니다."""
+        # ADBIDS 명령어 처리
+        if "ADBIDS" in command_template:
+            # all devices 모드에서만 실행 (이미 검증됨)
+            device_ids = [self.extract_device_id(device) for device in self.devices]
+            
+            # 짝지을 보드 대수만큼 묶어서 실행
+            commands_to_run = []
+            for i in range(0, len(device_ids), pair_count):
+                # pair_count 개씩 장치를 묶음
+                paired_devices = device_ids[i:i+pair_count]
+                
+                # 실제로 묶인 장치가 있을 때만 실행
+                if paired_devices:
+                    # ADBIDS: 쉼표로 연결 (공백 없이)
+                    adbids_value = ",".join(paired_devices)
+                    
+                    # 명령어 생성 (ADBIDS만 치환, ADBID/ADBNUM/TIME은 사용 안 함)
+                    cmd = command_template.replace("ADBIDS", adbids_value).replace("TIME", time_value)
+                    
+                    # 그룹 식별자 생성 (예: "device1,device2")
+                    group_id = f"group_{i//pair_count + 1}_{adbids_value}"
+                    commands_to_run.append((group_id, cmd, paired_devices))
+            
+            # 순차/동시 실행
             if self.sequential_var.get():
-                self.log("\n=== 순차 실행 모드 ===")
-                self._execute_sequential(commands_to_run)
+                self.log("\n=== 순차 실행 모드 (ADBIDS) ===")
+                self._execute_sequential_groups(commands_to_run)
             else:
-                self.log("\n=== 동시 실행 모드 ===")
-                self._execute_parallel(commands_to_run)
+                self.log("\n=== 동시 실행 모드 (ADBIDS) ===")
+                self._execute_parallel_groups(commands_to_run)
         else:
-            # 선택된 장치에 대해서만 실행
-            device_id = self.extract_device_id(selected)
-            cmd = command_template.replace("ADBID", device_id).replace("TIME", time_value)
-            commands_to_run.append((device_id, cmd))
-            self._execute_sequential(commands_to_run)
+            # 기존 로직 (ADBID, ADBNUM 사용)
+            commands_to_run = []
+            
+            if selected == "all devices":
+                # 모든 장치에 대해 실행
+                for idx, device in enumerate(self.devices):
+                    device_id = self.extract_device_id(device)
+                    device_num = str(idx + 1)  # 1부터 시작하는 인덱스
+                    cmd = (command_template
+                           .replace("ADBID", device_id)
+                           .replace("ADBNUM", device_num)
+                           .replace("TIME", time_value))
+                    commands_to_run.append((device_id, cmd))
+                
+                # 순차 실행 여부에 따라 실행 방식 결정
+                if self.sequential_var.get():
+                    self.log("\n=== 순차 실행 모드 ===")
+                    self._execute_sequential(commands_to_run)
+                else:
+                    self.log("\n=== 동시 실행 모드 ===")
+                    self._execute_parallel(commands_to_run)
+            else:
+                # 선택된 장치에 대해서만 실행
+                device_id = self.extract_device_id(selected)
+                
+                # 선택된 장치의 인덱스 찾기
+                device_num = "1"  # 기본값
+                for idx, device in enumerate(self.devices):
+                    if self.extract_device_id(device) == device_id:
+                        device_num = str(idx + 1)
+                        break
+                
+                cmd = (command_template
+                       .replace("ADBID", device_id)
+                       .replace("ADBNUM", device_num)
+                       .replace("TIME", time_value))
+                commands_to_run.append((device_id, cmd))
+                self._execute_sequential(commands_to_run)
+    
+    def _execute_sequential_groups(self, commands_to_run):
+        """ADBIDS 그룹 명령을 순차적으로 실행합니다."""
+        for group_id, cmd, device_ids in commands_to_run:
+            self.log(f"\n[그룹: {','.join(device_ids)}] 실행: {cmd}")
+            
+            # 그룹의 모든 장치에 대해 취소 플래그 초기화
+            for device_id in device_ids:
+                self.cancel_flags[device_id] = threading.Event()
+            
+            # 취소 확인
+            cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
+            if cancelled:
+                self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                continue
+            
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    shell=True,
+                    encoding='utf-8'
+                )
+                
+                # 프로세스 등록 (각 장치별로)
+                for device_id in device_ids:
+                    self.running_processes[device_id] = process
+                
+                # 프로세스 완료 대기 (30초 타임아웃)
+                try:
+                    stdout, stderr = process.communicate(timeout=30)
+                    
+                    # 취소 확인
+                    cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
+                    if cancelled:
+                        self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                        continue
+                    
+                    if stdout:
+                        self.log(f"[그룹: {','.join(device_ids)}] 출력:\n{stdout}")
+                    if stderr:
+                        self.log(f"[그룹: {','.join(device_ids)}] 에러:\n{stderr}")
+                        
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    self.log(f"[그룹: {','.join(device_ids)}] 타임아웃: 명령 실행 시간 초과")
+                    
+            except Exception as e:
+                self.log(f"[그룹: {','.join(device_ids)}] 실행 실패: {str(e)}")
+            finally:
+                # 프로세스 정리
+                for device_id in device_ids:
+                    if device_id in self.running_processes:
+                        del self.running_processes[device_id]
+                    if device_id in self.cancel_flags:
+                        del self.cancel_flags[device_id]
+    
+    def _execute_parallel_groups(self, commands_to_run):
+        """ADBIDS 그룹 명령을 동시에 실행합니다."""
+        threads = []
+        
+        def run_group_command(group_id, cmd, device_ids):
+            self.log(f"\n[그룹: {','.join(device_ids)}] 실행: {cmd}")
+            
+            # 그룹의 모든 장치에 대해 취소 플래그 초기화
+            for device_id in device_ids:
+                self.cancel_flags[device_id] = threading.Event()
+            
+            # 취소 확인
+            cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
+            if cancelled:
+                self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                return
+            
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    shell=True,
+                    encoding='utf-8'
+                )
+                
+                # 프로세스 등록
+                for device_id in device_ids:
+                    self.running_processes[device_id] = process
+                
+                # 프로세스 완료 대기
+                try:
+                    stdout, stderr = process.communicate(timeout=30)
+                    
+                    # 취소 확인
+                    cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
+                    if cancelled:
+                        self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                        return
+                    
+                    if stdout:
+                        self.log(f"[그룹: {','.join(device_ids)}] 출력:\n{stdout}")
+                    if stderr:
+                        self.log(f"[그룹: {','.join(device_ids)}] 에러:\n{stderr}")
+                        
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    self.log(f"[그룹: {','.join(device_ids)}] 타임아웃: 명령 실행 시간 초과")
+                    
+            except Exception as e:
+                self.log(f"[그룹: {','.join(device_ids)}] 실행 실패: {str(e)}")
+            finally:
+                # 프로세스 정리
+                for device_id in device_ids:
+                    if device_id in self.running_processes:
+                        del self.running_processes[device_id]
+                    if device_id in self.cancel_flags:
+                        del self.cancel_flags[device_id]
+        
+        # 각 그룹에 대해 별도 스레드 생성
+        for group_id, cmd, device_ids in commands_to_run:
+            thread = threading.Thread(target=run_group_command, args=(group_id, cmd, device_ids), daemon=True)
+            threads.append(thread)
+            thread.start()
+        
+        # 모든 스레드가 완료될 때까지 대기
+        for thread in threads:
+            thread.join()
+        
+        self.log("\n=== 모든 그룹 실행 완료 ===")
     
     def _execute_sequential(self, commands_to_run):
         """명령을 순차적으로 실행합니다."""
         for device_id, cmd in commands_to_run:
+            # 취소 플래그 초기화
+            self.cancel_flags[device_id] = threading.Event()
+            
+            # 취소 확인
+            if self.cancel_flags[device_id].is_set():
+                self.log(f"[{device_id}] 실행 취소됨", "red")
+                continue
+            
             self.log(f"\n[{device_id}] 실행: {cmd}")
             try:
-                result = subprocess.run(
+                process = subprocess.Popen(
                     cmd,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                     shell=True,
-                    encoding='utf-8',
-                    timeout=30  # 30초 타임아웃
+                    encoding='utf-8'
                 )
                 
-                if result.stdout:
-                    self.log(f"[{device_id}] 출력:\n{result.stdout}")
-                if result.stderr:
-                    self.log(f"[{device_id}] 에러:\n{result.stderr}")
+                # 프로세스 등록
+                self.running_processes[device_id] = process
+                
+                # 프로세스 완료 대기 (30초 타임아웃)
+                try:
+                    stdout, stderr = process.communicate(timeout=30)
                     
-            except subprocess.TimeoutExpired:
-                self.log(f"[{device_id}] 타임아웃: 명령 실행 시간 초과")
+                    # 취소 확인
+                    if self.cancel_flags[device_id].is_set():
+                        self.log(f"[{device_id}] 실행 취소됨", "red")
+                        continue
+                    
+                    if stdout:
+                        self.log(f"[{device_id}] 출력:\n{stdout}")
+                    if stderr:
+                        self.log(f"[{device_id}] 에러:\n{stderr}")
+                        
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    self.log(f"[{device_id}] 타임아웃: 명령 실행 시간 초과")
+                    
             except Exception as e:
                 self.log(f"[{device_id}] 실행 실패: {str(e)}")
+            finally:
+                # 프로세스 정리
+                if device_id in self.running_processes:
+                    del self.running_processes[device_id]
+                if device_id in self.cancel_flags:
+                    del self.cancel_flags[device_id]
     
     def _execute_parallel(self, commands_to_run):
         """명령을 동시에 실행합니다."""
         threads = []
         
         def run_command(device_id, cmd):
+            # 취소 플래그 초기화
+            self.cancel_flags[device_id] = threading.Event()
+            
+            # 취소 확인
+            if self.cancel_flags[device_id].is_set():
+                self.log(f"[{device_id}] 실행 취소됨", "red")
+                return
+            
             self.log(f"\n[{device_id}] 실행: {cmd}")
             try:
-                result = subprocess.run(
+                process = subprocess.Popen(
                     cmd,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                     shell=True,
-                    encoding='utf-8',
-                    timeout=30
+                    encoding='utf-8'
                 )
                 
-                if result.stdout:
-                    self.log(f"[{device_id}] 출력:\n{result.stdout}")
-                if result.stderr:
-                    self.log(f"[{device_id}] 에러:\n{result.stderr}")
+                # 프로세스 등록
+                self.running_processes[device_id] = process
+                
+                # 프로세스 완료 대기
+                try:
+                    stdout, stderr = process.communicate(timeout=30)
                     
-            except subprocess.TimeoutExpired:
-                self.log(f"[{device_id}] 타임아웃: 명령 실행 시간 초과")
+                    # 취소 확인
+                    if self.cancel_flags[device_id].is_set():
+                        self.log(f"[{device_id}] 실행 취소됨", "red")
+                        return
+                    
+                    if stdout:
+                        self.log(f"[{device_id}] 출력:\n{stdout}")
+                    if stderr:
+                        self.log(f"[{device_id}] 에러:\n{stderr}")
+                        
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    self.log(f"[{device_id}] 타임아웃: 명령 실행 시간 초과")
+                    
             except Exception as e:
                 self.log(f"[{device_id}] 실행 실패: {str(e)}")
+            finally:
+                # 프로세스 정리
+                if device_id in self.running_processes:
+                    del self.running_processes[device_id]
+                if device_id in self.cancel_flags:
+                    del self.cancel_flags[device_id]
         
         # 각 장치에 대해 별도 스레드 생성
         for device_id, cmd in commands_to_run:
             thread = threading.Thread(target=run_command, args=(device_id, cmd), daemon=True)
+            self.running_threads[device_id] = thread
             threads.append(thread)
             thread.start()
         
@@ -349,10 +687,15 @@ class ADBManager:
         
         self.log("\n=== 모든 장치 실행 완료 ===")
     
-    def log(self, message: str):
+    def log(self, message: str, color: str = "black"):
         """로그 텍스트 위젯에 메시지를 추가합니다 (스레드 안전)."""
         def _update_log():
-            self.log_text.insert(tk.END, message + "\n")
+            # 색상 태그 설정
+            tag_name = f"color_{color}"
+            self.log_text.tag_config(tag_name, foreground=color)
+            
+            # 메시지 삽입
+            self.log_text.insert(tk.END, message + "\n", tag_name)
             self.log_text.see(tk.END)
         
         # 메인 스레드에서 UI 업데이트

@@ -47,7 +47,7 @@
             ]
         },
         {
-            "title": "정보 조회",
+            "title": "정보 조회 & 파일",
             "commands": [
                 {
                     "name": "배터리 정보",
@@ -68,6 +68,27 @@
                 {
                     "name": "TIME초 동안 로그 수집",
                     "command": "adb -s ADBID shell timeout TIME logcat"
+                },
+                {
+                    "name": "파일을 device_ADBNUM.txt로 저장",
+                    "command": "adb -s ADBID pull /sdcard/test.txt device_ADBNUM.txt"
+                }
+            ]
+        },
+        {
+            "title": "그룹 명령 (ADBIDS)",
+            "commands": [
+                {
+                    "name": "그룹 장치 정보 출력",
+                    "command": "echo Devices: ADBIDS"
+                },
+                {
+                    "name": "그룹별 파일 가져오기",
+                    "command": "for id in $(echo ADBIDS | tr ',' ' '); do adb -s $id pull /sdcard/test.txt ${id}_test.txt; done"
+                },
+                {
+                    "name": "그룹별 스크립트 실행",
+                    "command": "python -c \"devices='ADBIDS'.split(','); print(f'Processing {len(devices)} devices: {devices}')\""
                 }
             ]
         }

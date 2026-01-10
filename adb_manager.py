@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import subprocess
 import json
 import os
@@ -11,13 +11,16 @@ class ADBManager:
     def __init__(self, root):
         self.root = root
         self.root.title("ADB Device Manager")
-        self.root.geometry("950x600")
+        # 윈도우 크기는 JSON 설정에서 로드됨
         
         # ADB 장치 목록
         self.devices = []
         
         # 순차 실행 여부
         self.sequential_var = tk.BooleanVar(value=True)
+        
+        # ADB 경로 사용 여부
+        self.use_custom_adb_path = tk.BooleanVar(value=False)
         
         # 장치별 실행 중인 프로세스 관리 (device_id -> process)
         self.running_processes = {}
@@ -38,7 +41,7 @@ class ADBManager:
         # 초기 장치 목록 로드
         self.refresh_devices()
         
-        # JSON 설정 로드
+        # JSON 설정 로드 (윈도우 크기 포함)
         self.load_commands()
     
     def setup_ui(self):
@@ -53,6 +56,30 @@ class ADBManager:
         
         refresh_btn = ttk.Button(top_frame, text="새로고침", command=self.refresh_devices)
         refresh_btn.pack(side=tk.LEFT, padx=5)
+        
+        # ADB 경로 설정 프레임
+        adb_path_frame = ttk.Frame(self.root, padding="5 0 10 5")
+        adb_path_frame.pack(fill=tk.X)
+        
+        # ADB 경로 체크박스
+        adb_path_check = ttk.Checkbutton(
+            adb_path_frame,
+            text="ADB 실행 경로 지정",
+            variable=self.use_custom_adb_path,
+            command=self.toggle_adb_path
+        )
+        adb_path_check.pack(side=tk.LEFT, padx=5)
+        
+        # ADB 경로 입력 필드
+        ttk.Label(adb_path_frame, text="경로:").pack(side=tk.LEFT, padx=5)
+        self.adb_path_entry = ttk.Entry(adb_path_frame, width=50)
+        self.adb_path_entry.insert(0, os.getcwd())
+        self.adb_path_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        self.adb_path_entry.config(state="disabled")
+        
+        # 찾아보기 버튼
+        self.browse_btn = ttk.Button(adb_path_frame, text="찾아보기", command=self.browse_adb_path, state="disabled")
+        self.browse_btn.pack(side=tk.LEFT, padx=5)
         
         # 옵션 프레임 (순차 실행 옵션, TIME 입력)
         option_frame = ttk.Frame(self.root, padding="5 0 10 5")
@@ -122,6 +149,39 @@ class ADBManager:
         
         self.log_text = scrolledtext.ScrolledText(bottom_frame, height=10, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
+    
+    def toggle_adb_path(self):
+        """ADB 경로 체크박스 토글 시 호출"""
+        if self.use_custom_adb_path.get():
+            self.adb_path_entry.config(state="normal")
+            self.browse_btn.config(state="normal")
+        else:
+            self.adb_path_entry.config(state="disabled")
+            self.browse_btn.config(state="disabled")
+    
+    def browse_adb_path(self):
+        """ADB 경로 찾아보기 다이얼로그"""
+        directory = filedialog.askdirectory(
+            title="ADB 실행 경로 선택",
+            initialdir=self.adb_path_entry.get()
+        )
+        if directory:
+            self.adb_path_entry.delete(0, tk.END)
+            self.adb_path_entry.insert(0, directory)
+    
+    def get_adb_command(self, base_command: str) -> str:
+        """ADB 명령어에 경로를 적용합니다."""
+        if self.use_custom_adb_path.get():
+            # 사용자 지정 경로 사용
+            custom_path = self.adb_path_entry.get().strip()
+            if custom_path:
+                return f'cd /d "{custom_path}" && {base_command}'
+        else:
+            # 현재 Python 코드 경로 사용
+            current_path = os.getcwd()
+            return f'cd /d "{current_path}" && {base_command}'
+        
+        return base_command
     
     def refresh_devices(self):
         """ADB 장치 목록을 새로고침합니다."""
@@ -201,6 +261,10 @@ class ADBManager:
         # 기본 설정 파일이 없으면 생성
         if not os.path.exists(config_file):
             default_config = {
+                "window": {
+                    "width": 1000,
+                    "height": 650
+                },
                 "columns": [
                     {
                         "title": "기본 명령",
@@ -246,6 +310,14 @@ class ADBManager:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+            
+            # 윈도우 크기 설정 (설정이 있으면 적용)
+            if 'window' in config:
+                window_config = config['window']
+                width = window_config.get('width', 1000)
+                height = window_config.get('height', 650)
+                self.root.geometry(f"{width}x{height}")
+                self.log(f"윈도우 크기 설정: {width}x{height}")
             
             columns = config.get('columns', [])
             
@@ -301,14 +373,14 @@ class ADBManager:
                 messagebox.showwarning("경고", "ADBIDS 변수는 'all devices' 선택 시에만 사용 가능합니다.")
                 return
         
-        # TIME 값 가져오기
+        # TIME 값 가져오기 (int로 변환)
         try:
             time_value = self.time_entry.get().strip()
             if not time_value:
                 time_value = "0"
-            time_seconds = str(float(time_value))
+            time_seconds = str(int(float(time_value)))  # int로 변환
         except ValueError:
-            messagebox.showerror("오류", "TIME 값은 숫자여야 합니다.")
+            messagebox.showerror("오류", "TIME 값은 정수여야 합니다.")
             return
         
         # 짝지을 보드 대수 가져오기
@@ -387,6 +459,9 @@ class ADBManager:
                     # 명령어 생성 (ADBIDS만 치환, ADBID/ADBNUM/TIME은 사용 안 함)
                     cmd = command_template.replace("ADBIDS", adbids_value).replace("TIME", time_value)
                     
+                    # ADB 경로 적용
+                    cmd = self.get_adb_command(cmd)
+                    
                     # 그룹 식별자 생성 (예: "device1,device2")
                     group_id = f"group_{i//pair_count + 1}_{adbids_value}"
                     commands_to_run.append((group_id, cmd, paired_devices))
@@ -411,6 +486,10 @@ class ADBManager:
                            .replace("ADBID", device_id)
                            .replace("ADBNUM", device_num)
                            .replace("TIME", time_value))
+                    
+                    # ADB 경로 적용
+                    cmd = self.get_adb_command(cmd)
+                    
                     commands_to_run.append((device_id, cmd))
                 
                 # 순차 실행 여부에 따라 실행 방식 결정
@@ -435,6 +514,10 @@ class ADBManager:
                        .replace("ADBID", device_id)
                        .replace("ADBNUM", device_num)
                        .replace("TIME", time_value))
+                
+                # ADB 경로 적용
+                cmd = self.get_adb_command(cmd)
+                
                 commands_to_run.append((device_id, cmd))
                 self._execute_sequential(commands_to_run)
     

@@ -1,0 +1,4 @@
+##
+<<REGEX>>version\s+\d+\.\d+
+<<REGEX>>\d{4}
+<<REGEX>>Python\s+\d+

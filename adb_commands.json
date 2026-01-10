@@ -9,19 +9,19 @@
             "commands": [
                 {
                     "name": "화면 캡처",
-                    "command": "adb -s ADBID shell screencap -p /sdcard/screen.png"
+                    "command": "adb -s [ADBID] shell screencap -p /sdcard/screen.png"
                 },
                 {
                     "name": "앱 목록 보기",
-                    "command": "adb -s ADBID shell pm list packages"
+                    "command": "adb -s [ADBID] shell pm list packages"
                 },
                 {
                     "name": "디바이스 정보",
-                    "command": "adb -s ADBID shell getprop"
+                    "command": "adb -s [ADBID] shell getprop"
                 },
                 {
                     "name": "로그캣 보기 (최근 100줄)",
-                    "command": "adb -s ADBID logcat -d -t 100"
+                    "command": "adb -s [ADBID] logcat -d -t 100"
                 }
             ]
         },
@@ -30,23 +30,23 @@
             "commands": [
                 {
                     "name": "재부팅",
-                    "command": "adb -s ADBID reboot"
+                    "command": "adb -s [ADBID] reboot"
                 },
                 {
                     "name": "화면 켜기",
-                    "command": "adb -s ADBID shell input keyevent KEYCODE_WAKEUP"
+                    "command": "adb -s [ADBID] shell input keyevent KEYCODE_WAKEUP"
                 },
                 {
                     "name": "화면 끄기",
-                    "command": "adb -s ADBID shell input keyevent KEYCODE_POWER"
+                    "command": "adb -s [ADBID] shell input keyevent KEYCODE_POWER"
                 },
                 {
                     "name": "홈 버튼",
-                    "command": "adb -s ADBID shell input keyevent KEYCODE_HOME"
+                    "command": "adb -s [ADBID] shell input keyevent KEYCODE_HOME"
                 },
                 {
                     "name": "TIME초 대기",
-                    "command": "adb -s ADBID shell sleep TIME"
+                    "command": "adb -s [ADBID] shell sleep [TESTTIME]"
                 }
             ]
         },
@@ -55,27 +55,27 @@
             "commands": [
                 {
                     "name": "배터리 정보",
-                    "command": "adb -s ADBID shell dumpsys battery"
+                    "command": "adb -s [ADBID] shell dumpsys battery"
                 },
                 {
                     "name": "설치된 앱 목록",
-                    "command": "adb -s ADBID shell pm list packages -3"
+                    "command": "adb -s [ADBID] shell pm list packages -3"
                 },
                 {
                     "name": "메모리 정보",
-                    "command": "adb -s ADBID shell dumpsys meminfo"
+                    "command": "adb -s [ADBID] shell dumpsys meminfo"
                 },
                 {
                     "name": "CPU 정보",
-                    "command": "adb -s ADBID shell cat /proc/cpuinfo"
+                    "command": "adb -s [ADBID] shell cat /proc/cpuinfo"
                 },
                 {
                     "name": "TIME초 동안 로그 수집",
-                    "command": "adb -s ADBID shell timeout TIME logcat"
+                    "command": "adb -s [ADBID] shell timeout [TESTTIME] logcat"
                 },
                 {
                     "name": "파일을 device_ADBNUM.txt로 저장",
-                    "command": "adb -s ADBID pull /sdcard/test.txt device_ADBNUM.txt"
+                    "command": "adb -s [ADBID] pull /sdcard/test.txt device_[ADBNUM].txt"
                 }
             ]
         },
@@ -84,15 +84,15 @@
             "commands": [
                 {
                     "name": "그룹 장치 정보 출력",
-                    "command": "echo Devices: ADBIDS"
+                    "command": "echo Devices: [[ADBID]S]"
                 },
                 {
                     "name": "그룹별 파일 가져오기",
-                    "command": "for id in $(echo ADBIDS | tr ',' ' '); do adb -s $id pull /sdcard/test.txt ${id}_test.txt; done"
+                    "command": "for id in $(echo [[ADBID]S] | tr ',' ' '); do adb -s $id pull /sdcard/test.txt ${id}_test.txt; done"
                 },
                 {
                     "name": "그룹별 스크립트 실행",
-                    "command": "python -c \"devices='ADBIDS'.split(','); print(f'Processing {len(devices)} devices: {devices}')\""
+                    "command": "python -c \"devices='[[ADBID]S]'.split(','); print(f'Processing {len(devices)} devices: {devices}')\""
                 }
             ]
         }

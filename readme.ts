@@ -38,7 +38,7 @@ manager.setAdbPath(null); // 현재 경로 사용
 
 // 설정
 manager.setSequentialMode(true);  // 순차 실행
-manager.setTimeValue(5);          // TIME 변수 값 (정수)
+manager.setTimeValue(5);          // [TESTTIME] 변수 값 (정수)
 manager.setPairCount(2);          // 짝지을 보드 대수
 
 // 장치 목록 가져오기
@@ -48,7 +48,7 @@ console.log('연결된 장치:', devices);
 
 // 명령 실행
 await manager.executeCommand(
-    'adb -s ADBID shell getprop',
+    'adb -s [ADBID] shell getprop',
     devices[0].id
 );
 ```
@@ -67,38 +67,38 @@ manager.setAdbPath(null);
 
 ### 변수 사용
 
-#### ADBID - 장치 ID
+#### [ADBID] - 장치 ID
 ```typescript
 await manager.executeCommand(
-    'adb -s ADBID shell getprop',
+    'adb -s [ADBID] shell getprop',
     'emulator-5554'
 );
 ```
 
-#### ADBNUM - 장치 순서 번호
+#### [ADBNUM] - 장치 순서 번호
 ```typescript
 await manager.executeCommand(
-    'adb -s ADBID pull /sdcard/log.txt log_ADBNUM.txt',
-    'all'
+    'adb -s [ADBID] pull /sdcard/log.txt log_[ADBNUM].txt',
+    'All Devices'
 );
 ```
 
-#### ADBIDS - 그룹 장치 ID (쉼표로 구분)
+#### [[ADBID]S] - 그룹 장치 ID (쉼표로 구분)
 ```typescript
 manager.setPairCount(2); // 2개씩 묶음
 await manager.executeCommand(
-    'echo Processing: ADBIDS',
-    'all'
+    'echo Processing: [[ADBID]S]',
+    'All Devices'
 );
 // 결과: emulator-5554,emulator-5556
 ```
 
-#### TIME - 시간 값 (정수)
+#### [TESTTIME] - 시간 값 (정수)
 ```typescript
 manager.setTimeValue(10);
 await manager.executeCommand(
-    'adb -s ADBID shell sleep TIME',
-    'all'
+    'adb -s [ADBID] shell sleep [TESTTIME]',
+    'All Devices'
 );
 ```
 
@@ -115,16 +115,16 @@ await manager.executeCommand(
 ##### `refreshDevices(): Promise<DeviceInfo[]>`
 - ADB 장치 목록을 가져옵니다
 
-##### `executeCommand(commandTemplate: string, selectedDevice: string | 'all'): Promise<void>`
+##### `executeCommand(commandTemplate: string, selectedDevice: string | 'All Devices'): Promise<void>`
 - 명령을 실행합니다
-- `commandTemplate`: 명령 템플릿 (ADBID, ADBNUM, ADBIDS, TIME 변수 사용)
-- `selectedDevice`: 장치 ID 또는 'all'
+- `commandTemplate`: 명령 템플릿 ([ADBID], [ADBNUM], [[ADBID]S], [TESTTIME] 변수 사용)
+- `selectedDevice`: 장치 ID 또는 'All Devices'
 
 ##### `setSequentialMode(sequential: boolean): void`
 - 순차/동시 실행 모드를 설정합니다
 
 ##### `setTimeValue(time: number): void`
-- TIME 변수 값을 설정합니다 (정수로 변환됨)
+- [TESTTIME] 변수 값을 설정합니다 (정수로 변환됨)
 
 ##### `setPairCount(count: number): void`
 - 짝지을 보드 대수를 설정합니다 (1 이상)
@@ -205,7 +205,7 @@ interface WindowConfig {
             "commands": [
                 {
                     "name": "화면 캡처",
-                    "command": "adb -s ADBID shell screencap -p /sdcard/screen.png"
+                    "command": "adb -s [ADBID] shell screencap -p /sdcard/screen.png"
                 }
             ]
         }
@@ -218,16 +218,16 @@ interface WindowConfig {
 ### 1. 모든 장치에서 배터리 정보 가져오기
 ```typescript
 await manager.executeCommand(
-    'adb -s ADBID shell dumpsys battery',
-    'all'
+    'adb -s [ADBID] shell dumpsys battery',
+    'All Devices'
 );
 ```
 
 ### 2. 장치별로 파일 저장
 ```typescript
 await manager.executeCommand(
-    'adb -s ADBID pull /sdcard/log.txt log_ADBNUM.txt',
-    'all'
+    'adb -s [ADBID] pull /sdcard/log.txt log_[ADBNUM].txt',
+    'All Devices'
 );
 // 결과: log_1.txt, log_2.txt, log_3.txt, ...
 ```
@@ -236,8 +236,8 @@ await manager.executeCommand(
 ```typescript
 manager.setPairCount(3); // 3개씩 묶음
 await manager.executeCommand(
-    'python process_devices.py --devices ADBIDS',
-    'all'
+    'python process_devices.py --devices [[ADBID]S]',
+    'All Devices'
 );
 // 그룹 1: device1,device2,device3
 // 그룹 2: device4,device5,device6
@@ -252,14 +252,56 @@ manager.setAdbPath('C:\\Users\\Username\\platform-tools');
 manager.setAdbPath('/home/user/android-sdk/platform-tools');
 
 await manager.executeCommand(
-    'adb -s ADBID devices',
-    'all'
+    'adb -s [ADBID] devices',
+    'All Devices'
 );
 ```
 
 ## 주의사항
 
-- TIME 값은 자동으로 정수로 변환됩니다
-- ADBIDS는 'all' 모드에서만 사용 가능합니다
+- [TESTTIME] 값은 자동으로 정수로 변환됩니다
+- [[ADBID]S]는 'All Devices' 모드에서만 사용 가능합니다
 - ADB 경로를 지정하지 않으면 현재 코드 실행 경로를 사용합니다
 - Windows에서는 `cd /d` 명령을, Linux/Mac에서는 `cd` 명령을 사용합니다
+
+## 변수 설명
+
+### [ADBID]
+- 선택된 장치의 ADB ID
+- 예시: `emulator-5554`
+
+### [ADBNUM]
+- 장치의 순서 번호 (1부터 시작)
+- 예시: `1`, `2`, `3`
+
+### [ADBIDS]
+- 쉼표로 연결된 장치 ID 목록
+- 예시: `emulator-5554,emulator-5556`
+- All Devices 모드 전용
+
+### [TESTTIME]
+- UI에 입력된 시간 값 (정수, 초)
+- 예시: `5`, `10`
+
+### [CURTIME]
+- 명령 실행 시점의 날짜시간
+- 형식: `YYYYMMDD_HHMMSS`
+- 예시: `20260110_143025`
+
+### [CURTIME] 사용 예시
+
+```typescript
+// 타임스탬프가 포함된 로그 파일
+await manager.executeCommand(
+    'adb -s [ADBID] logcat -d > log_[ADBNUM]_[CURTIME].txt',
+    'All Devices'
+);
+// 결과: log_1_20260110_143025.txt, log_2_20260110_143025.txt
+
+// 타임스탬프 스크린샷
+await manager.executeCommand(
+    'adb -s [ADBID] exec-out screencap -p > screenshot_[CURTIME].png',
+    device.id
+);
+// 결과: screenshot_20260110_143025.png
+```

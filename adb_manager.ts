@@ -96,11 +96,11 @@ class ADBManager {
                         commands: [
                             {
                                 name: '화면 캡처',
-                                command: 'adb -s ADBID shell screencap -p /sdcard/screen.png'
+                                command: 'adb -s [ADBID] shell screencap -p /sdcard/screen.png'
                             },
                             {
                                 name: '앱 목록 보기',
-                                command: 'adb -s ADBID shell pm list packages'
+                                command: 'adb -s [ADBID] shell pm list packages'
                             }
                         ]
                     },
@@ -109,7 +109,7 @@ class ADBManager {
                         commands: [
                             {
                                 name: '그룹 장치 정보',
-                                command: 'echo Devices: ADBIDS'
+                                command: 'echo Devices: [[ADBID]S]'
                             }
                         ]
                     }
@@ -194,18 +194,24 @@ class ADBManager {
      */
     async executeCommand(
         commandTemplate: string,
-        selectedDevice: string | 'all'
+        current_time: string,
+        selectedDevice: string | 'All Devices',
+        current_time: string
     ): Promise<void> {
-        // ADBIDS 검증
-        if (commandTemplate.includes('ADBIDS')) {
-            if (selectedDevice !== 'all') {
-                throw new Error('ADBIDS 변수는 all devices 선택 시에만 사용 가능합니다.');
+        // [ADBIDS] 검증
+        if (commandTemplate.includes('[ADBIDS]')) {
+            if (selectedDevice !== 'All Devices') {
+                throw new Error('[ADBIDS] 변수는 All Devices 선택 시에만 사용 가능합니다.');
             }
         }
 
+        // [CURTIME] 생성
+        const now = new Date();
+        const current_time = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
         // 실행할 장치 목록 결정
         let devicesToRun: string[];
-        if (selectedDevice === 'all') {
+        if (selectedDevice === 'All Devices') {
             devicesToRun = this.devices.map(d => d.id);
         } else {
             devicesToRun = [selectedDevice];
@@ -216,18 +222,18 @@ class ADBManager {
             this.cancelDeviceCommand(deviceId);
         }
 
-        // ADBIDS 명령 처리
-        if (commandTemplate.includes('ADBIDS')) {
-            await this.executeAdbidsCommand(commandTemplate);
+        // [ADBIDS] 명령 처리
+        if (commandTemplate.includes('[ADBIDS]')) {
+            await this.executeAdbidsCommand(commandTemplate, current_time);
         } else {
-            await this.executeRegularCommand(commandTemplate, selectedDevice);
+            await this.executeRegularCommand(commandTemplate, selectedDevice, current_time);
         }
     }
 
     /**
-     * ADBIDS 명령을 실행합니다
+     * [[ADBID]S] 명령을 실행합니다
      */
-    private async executeAdbidsCommand(commandTemplate: string): Promise<void> {
+    private async executeAdbidsCommand(commandTemplate: string, current_time: string): Promise<void> {
         const deviceIds = this.devices.map(d => d.id);
         const groups: string[][] = [];
 
@@ -238,8 +244,8 @@ class ADBManager {
 
         console.log(
             this.sequentialMode
-                ? '\n=== 순차 실행 모드 (ADBIDS) ==='
-                : '\n=== 동시 실행 모드 (ADBIDS) ==='
+                ? '\n=== 순차 실행 모드 ([[ADBID]S]) ==='
+                : '\n=== 동시 실행 모드 ([[ADBID]S]) ==='
         );
 
         if (this.sequentialMode) {
@@ -262,12 +268,14 @@ class ADBManager {
      */
     private async executeGroupCommand(
         commandTemplate: string,
+        current_time: string,
         deviceIds: string[]
     ): Promise<void> {
         const adbidsValue = deviceIds.join(',');
         let cmd = commandTemplate
-            .replace(/ADBIDS/g, adbidsValue)
-            .replace(/TIME/g, this.timeValue.toString());
+            .replace(/[ADBIDS]/g, adbidsValue)
+                    .replace(/\[TESTTIME\]/g, this.timeValue.toString())
+                    .replace(/\[CURTIME\]/g, current_time);
 
         // ADB 경로 적용
         cmd = this.getAdbCommand(cmd);
@@ -321,23 +329,26 @@ class ADBManager {
     }
 
     /**
-     * 일반 명령을 실행합니다 (ADBID, ADBNUM 사용)
+     * 일반 명령을 실행합니다 ([ADBID], [ADBNUM] 사용)
      */
     private async executeRegularCommand(
         commandTemplate: string,
-        selectedDevice: string | 'all'
+        current_time: string,
+        selectedDevice: string | 'All Devices',
+        current_time: string
     ): Promise<void> {
         const commands: Array<{ deviceId: string; cmd: string }> = [];
 
-        if (selectedDevice === 'all') {
+        if (selectedDevice === 'All Devices') {
             // 모든 장치에 대해 실행
             for (let idx = 0; idx < this.devices.length; idx++) {
                 const deviceId = this.devices[idx].id;
                 const deviceNum = (idx + 1).toString();
                 let cmd = commandTemplate
-                    .replace(/ADBID/g, deviceId)
-                    .replace(/ADBNUM/g, deviceNum)
-                    .replace(/TIME/g, this.timeValue.toString());
+                    .replace(/\[ADBID\]/g, deviceId)
+                    .replace(/\[ADBNUM\]/g, deviceNum)
+                    .replace(/\[TESTTIME\]/g, this.timeValue.toString())
+                    .replace(/\[CURTIME\]/g, current_time);
                 
                 // ADB 경로 적용
                 cmd = this.getAdbCommand(cmd);
@@ -349,9 +360,10 @@ class ADBManager {
             const idx = this.devices.findIndex(d => d.id === selectedDevice);
             const deviceNum = (idx + 1).toString();
             let cmd = commandTemplate
-                .replace(/ADBID/g, selectedDevice)
-                .replace(/ADBNUM/g, deviceNum)
-                .replace(/TIME/g, this.timeValue.toString());
+                .replace(/\[ADBID\]/g, selectedDevice)
+                .replace(/\[ADBNUM\]/g, deviceNum)
+                .replace(/\[TESTTIME\]/g, this.timeValue.toString())
+                .replace(/\[CURTIME\]/g, current_time);
             
             // ADB 경로 적용
             cmd = this.getAdbCommand(cmd);
@@ -483,21 +495,21 @@ async function main() {
         // 단일 장치 명령
         if (devices.length > 0) {
             await manager.executeCommand(
-                'adb -s ADBID shell getprop ro.product.model',
+                'adb -s [ADBID] shell getprop ro.product.model',
                 devices[0].id
             );
         }
 
         // All devices 명령
         await manager.executeCommand(
-            'adb -s ADBID shell dumpsys battery',
-            'all'
+            'adb -s [ADBID] shell dumpsys battery',
+            'All Devices'
         );
 
-        // ADBIDS 그룹 명령
+        // [[ADBID]S] 그룹 명령
         await manager.executeCommand(
-            'echo Processing: ADBIDS',
-            'all'
+            'echo Processing: [[ADBID]S]',
+            'All Devices'
         );
     } catch (error) {
         console.error('명령 실행 오류:', error);

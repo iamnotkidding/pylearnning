@@ -1,4 +1,10 @@
 {
+    "settings": {
+        "adb_path": "",
+        "use_custom_adb_path": false,
+        "testtime": 5,
+        "pair_count": 2
+    },
     "window": {
         "width": 1200,
         "height": 700

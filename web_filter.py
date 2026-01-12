@@ -8,8 +8,10 @@ import re
 import sys
 import argparse
 import requests
+import pandas as pd
 from typing import List, Tuple
 from urllib.parse import urlparse
+from html import unescape
 
 
 class WebLineFilter:
@@ -76,9 +78,30 @@ class WebLineFilter:
             print(f"❌ 키워드 파일 읽기 오류: {e}")
             sys.exit(1)
     
+    def _clean_html(self, text: str) -> str:
+        """
+        HTML 태그를 제거하고 <br> 태그를 개행으로 변환
+        
+        Args:
+            text: 원본 HTML 텍스트
+            
+        Returns:
+            정리된 텍스트
+        """
+        # <br>, <br/>, <br /> 태그를 개행으로 변환 (대소문자 무시)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        
+        # 모든 HTML 태그 제거
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # HTML 엔티티 디코딩 (&nbsp;, &lt; 등)
+        text = unescape(text)
+        
+        return text
+    
     def _fetch_webpage(self, url: str) -> Tuple[str, List[str]]:
         """
-        웹 페이지를 가져와서 줄 단위로 분리
+        웹 페이지를 가져와서 HTML 태그를 제거하고 줄 단위로 분리
         
         Returns:
             (URL, 줄 목록) 튜플
@@ -90,8 +113,11 @@ class WebLineFilter:
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             
+            # HTML 태그 제거 및 <br> 태그를 개행으로 변환
+            cleaned_text = self._clean_html(response.text)
+            
             # 텍스트를 줄 단위로 분리
-            lines = response.text.split('\n')
+            lines = cleaned_text.split('\n')
             return url, lines
         except requests.exceptions.RequestException as e:
             print(f"⚠️  URL '{url}' 가져오기 실패: {e}")
@@ -117,12 +143,13 @@ class WebLineFilter:
         
         return matches
     
-    def run(self, output_file: str = None):
+    def run(self, output_file: str = None, csv_file: str = None):
         """
         메인 실행 함수
         
         Args:
-            output_file: 결과를 저장할 파일 경로 (선택사항)
+            output_file: 결과를 저장할 텍스트 파일 경로 (선택사항)
+            csv_file: 결과를 저장할 CSV 파일 경로 (선택사항)
         """
         print("\n" + "=" * 80)
         print("웹 페이지 키워드 필터링 시작")
@@ -151,6 +178,10 @@ class WebLineFilter:
         # 파일로 저장 (선택사항)
         if output_file:
             self._save_results(all_results, output_file)
+        
+        # CSV 파일로 저장 (선택사항)
+        if csv_file:
+            self._save_results_to_csv(all_results, csv_file)
     
     def _display_results(self, results: List[Tuple[str, List[Tuple[int, str, str]]]]):
         """결과를 콘솔에 출력"""
@@ -170,11 +201,13 @@ class WebLineFilter:
             print("-" * 80)
             
             for line_num, keyword, line in matches:
-                # 키워드 하이라이트 (간단히 표시)
+                # 키워드 표시
                 keyword_display = f"[{keyword}]" if len(keyword) < 30 else f"[{keyword[:27]}...]"
-                print(f"  {line_num:5d} | {keyword_display:35s} | {line[:100]}")
-                if len(line) > 100:
-                    print(f"        | {' ' * 35} | ... (생략)")
+                # 줄 번호와 키워드 표시
+                print(f"  줄 {line_num:5d} | 키워드: {keyword_display}")
+                # 매칭된 줄 전체 출력
+                print(f"  내용: {line}")
+                print()
         
         print("\n" + "=" * 80)
         print(f"총 {len(results)}개 URL에서 {total_matches}개의 매칭을 발견했습니다.")
@@ -201,6 +234,34 @@ class WebLineFilter:
             print(f"\n✓ 결과가 '{filepath}'에 저장되었습니다.")
         except Exception as e:
             print(f"⚠️  파일 저장 오류: {e}")
+    
+    def _save_results_to_csv(self, results: List[Tuple[str, List[Tuple[int, str, str]]]], filepath: str):
+        """결과를 CSV 파일로 저장 (pandas DataFrame 사용)"""
+        try:
+            # DataFrame용 데이터 준비
+            data = []
+            for url, matches in results:
+                for line_num, keyword, line in matches:
+                    data.append({
+                        'URL': url,
+                        '줄번호': line_num,
+                        '키워드': keyword,
+                        '매칭내용': line
+                    })
+            
+            # DataFrame 생성
+            if data:
+                df = pd.DataFrame(data)
+                
+                # CSV 파일로 저장
+                df.to_csv(filepath, index=False, encoding='utf-8-sig')  # utf-8-sig: Excel 호환성
+                
+                print(f"\n✓ CSV 결과가 '{filepath}'에 저장되었습니다.")
+                print(f"  총 {len(df)}개의 매칭이 저장되었습니다.")
+            else:
+                print(f"\n⚠️  저장할 데이터가 없습니다.")
+        except Exception as e:
+            print(f"⚠️  CSV 파일 저장 오류: {e}")
 
 
 def main():
@@ -211,6 +272,8 @@ def main():
 사용 예제:
   python web_filter.py urls.txt keywords.txt
   python web_filter.py urls.txt keywords.txt -o results.txt
+  python web_filter.py urls.txt keywords.txt -c results.csv
+  python web_filter.py urls.txt keywords.txt -o results.txt -c results.csv
 
 파일 형식:
   urls.txt      - 한 줄에 하나의 URL
@@ -225,13 +288,14 @@ def main():
     
     parser.add_argument('urls_file', help='URL 목록이 저장된 파일')
     parser.add_argument('keywords_file', help='키워드 목록이 저장된 파일')
-    parser.add_argument('-o', '--output', help='결과를 저장할 파일 경로', default=None)
+    parser.add_argument('-o', '--output', help='결과를 저장할 텍스트 파일 경로', default=None)
+    parser.add_argument('-c', '--csv', help='결과를 저장할 CSV 파일 경로', default=None)
     
     args = parser.parse_args()
     
     # 필터 실행
     filter_tool = WebLineFilter(args.urls_file, args.keywords_file)
-    filter_tool.run(args.output)
+    filter_tool.run(args.output, args.csv)
 
 
 if __name__ == '__main__':

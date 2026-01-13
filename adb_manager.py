@@ -112,7 +112,19 @@ class ADBManager:
         self.pair_count_entry.insert(0, "2")
         self.pair_count_entry.pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(option_frame, text="(변수: [ADBID], [ADBNUM], [ADBIDS], [TESTTIME])").pack(side=tk.LEFT, padx=5)
+        # 구분선
+        ttk.Separator(option_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        
+        # Stop 버튼
+        self.stop_btn = ttk.Button(
+            option_frame,
+            text="⏹ Stop All",
+            command=self.stop_all_commands,
+            state="disabled"
+        )
+        self.stop_btn.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(option_frame, text="(변수: [ADBID], [ADBNUM], [ADBIDS], [TESTTIME], [CURTIME])").pack(side=tk.LEFT, padx=5)
         
         # 구분선
         ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
@@ -475,8 +487,34 @@ class ADBManager:
         if device_id in self.running_threads:
             del self.running_threads[device_id]
     
+    def stop_all_commands(self):
+        """실행 중인 모든 명령을 중지합니다."""
+        if not self.running_processes:
+            messagebox.showinfo("알림", "실행 중인 명령이 없습니다.")
+            return
+        
+        # 모든 장치의 명령 취소
+        device_ids = list(self.running_processes.keys())
+        for device_id in device_ids:
+            self.cancel_device_command(device_id)
+        
+        self.log("\n=== 모든 명령 중지됨 ===", "red")
+        
+        # Stop 버튼 비활성화
+        self.stop_btn.config(state="disabled")
+    
+    def update_stop_button_state(self):
+        """Stop 버튼의 활성화 상태를 업데이트합니다."""
+        if self.running_processes:
+            self.stop_btn.config(state="normal")
+        else:
+            self.stop_btn.config(state="disabled")
+    
     def _execute_command_thread(self, command_template: str, selected: str, time_value: str, current_time: str, pair_count: int):
         """별도 스레드에서 명령을 실행합니다."""
+        # Stop 버튼 활성화
+        self.root.after(0, lambda: self.stop_btn.config(state="normal"))
+        
         # [ADBIDS] 명령어 처리
         if "[ADBIDS]" in command_template:
             # All Devices 모드에서만 실행 (이미 검증됨)
@@ -649,6 +687,9 @@ class ADBManager:
                         del self.running_processes[device_id]
                     if device_id in self.cancel_flags:
                         del self.cancel_flags[device_id]
+        
+        # Stop 버튼 상태 업데이트
+        self.root.after(0, self.update_stop_button_state)
     
     def _execute_parallel_groups(self, commands_to_run):
         """[ADBIDS] 그룹 명령을 동시에 실행합니다."""
@@ -750,6 +791,9 @@ class ADBManager:
             thread.join()
         
         self.log("\n=== 모든 그룹 실행 완료 ===")
+        
+        # Stop 버튼 상태 업데이트
+        self.root.after(0, self.update_stop_button_state)
     
     def _execute_sequential(self, commands_to_run):
         """명령을 순차적으로 실행합니다."""
@@ -829,6 +873,9 @@ class ADBManager:
                     del self.running_processes[device_id]
                 if device_id in self.cancel_flags:
                     del self.cancel_flags[device_id]
+        
+        # Stop 버튼 상태 업데이트
+        self.root.after(0, self.update_stop_button_state)
     
     def _execute_parallel(self, commands_to_run):
         """명령을 동시에 실행합니다."""
@@ -923,6 +970,9 @@ class ADBManager:
             thread.join()
         
         self.log("\n=== 모든 장치 실행 완료 ===")
+        
+        # Stop 버튼 상태 업데이트
+        self.root.after(0, self.update_stop_button_state)
     
     def log(self, message: str, color: str = "black"):
         """로그 텍스트 위젯에 메시지를 추가합니다 (스레드 안전)."""

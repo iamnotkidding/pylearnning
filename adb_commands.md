@@ -455,3 +455,51 @@ JSON 파일의 최상위에 `window` 객체를 추가하여 윈도우 크기를 
 - `use_custom_adb_path`가 `false`면 `adb_path` 값은 무시됩니다
 - `testtime`과 `pair_count`는 UI에서 변경 가능하며, 여기서는 초기값만 지정합니다
 - settings 섹션을 생략하면 모든 값이 기본값으로 설정됩니다
+
+## 실시간 출력
+
+명령 실행 시 ADB의 출력을 실시간으로 확인할 수 있습니다.
+
+### 출력 형식
+
+**일반 명령:**
+```
+[emulator-5554] OUT: 출력 라인 1
+[emulator-5554] OUT: 출력 라인 2
+[emulator-5554] ERR: 에러 메시지
+[emulator-5554] 완료
+```
+
+**그룹 명령:**
+```
+[그룹: emulator-5554,emulator-5556] OUT: 출력 라인
+[그룹: emulator-5554,emulator-5556] ERR: 에러 메시지
+[그룹: emulator-5554,emulator-5556] 완료
+```
+
+### 특징
+
+- **라인별 출력**: 명령이 한 줄씩 출력할 때마다 즉시 표시
+- **OUT/ERR 구분**: 표준 출력(OUT)과 표준 에러(ERR)를 구분하여 표시
+- **종료 코드**: 명령 완료 시 종료 코드 표시 (0 = 성공)
+- **동시 실행**: 여러 장치 동시 실행 시 각 장치별 출력이 섞여서 표시됨
+
+### 예시
+
+**로그 실시간 출력:**
+```json
+{
+    "name": "로그캣 실시간",
+    "command": "adb -s [ADBID] logcat"
+}
+```
+→ 로그가 생성되는 대로 실시간으로 표시됨
+
+**진행률 표시:**
+```json
+{
+    "name": "파일 다운로드",
+    "command": "adb -s [ADBID] pull /sdcard/large_file.zip ."
+}
+```
+→ 다운로드 진행률이 실시간으로 표시됨

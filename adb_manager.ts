@@ -87,6 +87,30 @@ class ADBManager {
     }
 
     /**
+     * 실행 중인 모든 명령을 중지합니다
+     */
+    stopAllCommands(): void {
+        if (this.runningProcesses.size === 0) {
+            console.log('실행 중인 명령이 없습니다.');
+            return;
+        }
+
+        const deviceIds = Array.from(this.runningProcesses.keys());
+        for (const deviceId of deviceIds) {
+            this.cancelDeviceCommand(deviceId);
+        }
+
+        console.log('\x1b[31m\n=== 모든 명령 중지됨 ===\x1b[0m');
+    }
+
+    /**
+     * 실행 중인 프로세스가 있는지 확인합니다
+     */
+    hasRunningProcesses(): boolean {
+        return this.runningProcesses.size > 0;
+    }
+
+    /**
      * JSON 설정 파일을 로드합니다
      */
     private loadConfig(): void {
@@ -518,6 +542,64 @@ class ADBManager {
             throw new Error('짝지을 보드 대수는 1 이상이어야 합니다.');
         }
         this.pairCount = count;
+    }
+
+    /**
+     * 실행 중인 모든 명령을 중지합니다
+     */
+    stopAllCommands(): void {
+        if (this.runningProcesses.size === 0) {
+            console.log('실행 중인 명령이 없습니다.');
+            return;
+        }
+
+        console.log('\n=== 모든 명령 중지 중 ===');
+        
+        // 모든 프로세스 종료
+        for (const [deviceId, processInfo] of this.runningProcesses.entries()) {
+            try {
+                processInfo.process.kill('SIGTERM');
+                console.log(`[${deviceId}] 명령 중지됨`);
+            } catch (error) {
+                console.error(`[${deviceId}] 중지 실패:`, error);
+            }
+        }
+
+        // 모든 프로세스 정보 삭제
+        this.runningProcesses.clear();
+        
+        console.log('=== 모든 명령 중지 완료 ===\n');
+    }
+
+    /**
+     * 특정 장치의 명령을 중지합니다
+     */
+    stopDeviceCommand(deviceId: string): void {
+        const processInfo = this.runningProcesses.get(deviceId);
+        
+        if (!processInfo) {
+            console.log(`[${deviceId}] 실행 중인 명령이 없습니다.`);
+            return;
+        }
+
+        try {
+            processInfo.process.kill('SIGTERM');
+            console.log(`[${deviceId}] 명령 중지됨`);
+            
+            // 관련된 모든 장치 ID 삭제
+            for (const id of processInfo.deviceIds) {
+                this.runningProcesses.delete(id);
+            }
+        } catch (error) {
+            console.error(`[${deviceId}] 중지 실패:`, error);
+        }
+    }
+
+    /**
+     * 실행 중인 프로세스 수를 반환합니다
+     */
+    getRunningProcessCount(): number {
+        return this.runningProcesses.size;
     }
 
     /**

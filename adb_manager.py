@@ -566,7 +566,8 @@ class ADBManager:
     def _execute_sequential_groups(self, commands_to_run):
         """[ADBIDS] 그룹 명령을 순차적으로 실행합니다."""
         for group_id, cmd, device_ids in commands_to_run:
-            self.log(f"\n[그룹: {','.join(device_ids)}] 실행: {cmd}")
+            group_label = ','.join(device_ids)
+            self.log(f"\n[그룹: {group_label}] 실행: {cmd}")
             
             # 그룹의 모든 장치에 대해 취소 플래그 초기화
             for device_id in device_ids:
@@ -575,7 +576,7 @@ class ADBManager:
             # 취소 확인
             cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
             if cancelled:
-                self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                self.log(f"[그룹: {group_label}] 실행 취소됨", "red")
                 continue
             
             try:
@@ -585,34 +586,62 @@ class ADBManager:
                     stderr=subprocess.PIPE,
                     text=True,
                     shell=True,
-                    encoding='utf-8'
+                    encoding='utf-8',
+                    bufsize=1,  # 라인 버퍼링
+                    universal_newlines=True
                 )
                 
                 # 프로세스 등록 (각 장치별로)
                 for device_id in device_ids:
                     self.running_processes[device_id] = process
                 
+                # 실시간 출력 읽기
+                def read_output(pipe, prefix):
+                    try:
+                        for line in iter(pipe.readline, ''):
+                            if line:
+                                self.log(f"[그룹: {group_label}] {prefix}: {line.rstrip()}")
+                            # 취소 확인
+                            cancelled = any(self.cancel_flags.get(did) and self.cancel_flags[did].is_set() for did in device_ids)
+                            if cancelled:
+                                break
+                    except Exception as e:
+                        self.log(f"[그룹: {group_label}] 출력 읽기 오류: {str(e)}")
+                    finally:
+                        pipe.close()
+                
+                # stdout, stderr를 별도 스레드로 읽기
+                stdout_thread = threading.Thread(target=read_output, args=(process.stdout, "OUT"), daemon=True)
+                stderr_thread = threading.Thread(target=read_output, args=(process.stderr, "ERR"), daemon=True)
+                
+                stdout_thread.start()
+                stderr_thread.start()
+                
                 # 프로세스 완료 대기 (30초 타임아웃)
                 try:
-                    stdout, stderr = process.communicate(timeout=30)
+                    process.wait(timeout=30)
+                    
+                    # 출력 스레드 완료 대기
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
                     
                     # 취소 확인
                     cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
                     if cancelled:
-                        self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                        self.log(f"[그룹: {group_label}] 실행 취소됨", "red")
                         continue
                     
-                    if stdout:
-                        self.log(f"[그룹: {','.join(device_ids)}] 출력:\n{stdout}")
-                    if stderr:
-                        self.log(f"[그룹: {','.join(device_ids)}] 에러:\n{stderr}")
+                    if process.returncode == 0:
+                        self.log(f"[그룹: {group_label}] 완료")
+                    else:
+                        self.log(f"[그룹: {group_label}] 종료 코드: {process.returncode}")
                         
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    self.log(f"[그룹: {','.join(device_ids)}] 타임아웃: 명령 실행 시간 초과")
+                    self.log(f"[그룹: {group_label}] 타임아웃: 명령 실행 시간 초과")
                     
             except Exception as e:
-                self.log(f"[그룹: {','.join(device_ids)}] 실행 실패: {str(e)}")
+                self.log(f"[그룹: {group_label}] 실행 실패: {str(e)}")
             finally:
                 # 프로세스 정리
                 for device_id in device_ids:
@@ -626,7 +655,8 @@ class ADBManager:
         threads = []
         
         def run_group_command(group_id, cmd, device_ids):
-            self.log(f"\n[그룹: {','.join(device_ids)}] 실행: {cmd}")
+            group_label = ','.join(device_ids)
+            self.log(f"\n[그룹: {group_label}] 실행: {cmd}")
             
             # 그룹의 모든 장치에 대해 취소 플래그 초기화
             for device_id in device_ids:
@@ -635,7 +665,7 @@ class ADBManager:
             # 취소 확인
             cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
             if cancelled:
-                self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                self.log(f"[그룹: {group_label}] 실행 취소됨", "red")
                 return
             
             try:
@@ -645,34 +675,62 @@ class ADBManager:
                     stderr=subprocess.PIPE,
                     text=True,
                     shell=True,
-                    encoding='utf-8'
+                    encoding='utf-8',
+                    bufsize=1,  # 라인 버퍼링
+                    universal_newlines=True
                 )
                 
                 # 프로세스 등록
                 for device_id in device_ids:
                     self.running_processes[device_id] = process
                 
+                # 실시간 출력 읽기
+                def read_output(pipe, prefix):
+                    try:
+                        for line in iter(pipe.readline, ''):
+                            if line:
+                                self.log(f"[그룹: {group_label}] {prefix}: {line.rstrip()}")
+                            # 취소 확인
+                            cancelled = any(self.cancel_flags.get(did) and self.cancel_flags[did].is_set() for did in device_ids)
+                            if cancelled:
+                                break
+                    except Exception as e:
+                        self.log(f"[그룹: {group_label}] 출력 읽기 오류: {str(e)}")
+                    finally:
+                        pipe.close()
+                
+                # stdout, stderr를 별도 스레드로 읽기
+                stdout_thread = threading.Thread(target=read_output, args=(process.stdout, "OUT"), daemon=True)
+                stderr_thread = threading.Thread(target=read_output, args=(process.stderr, "ERR"), daemon=True)
+                
+                stdout_thread.start()
+                stderr_thread.start()
+                
                 # 프로세스 완료 대기
                 try:
-                    stdout, stderr = process.communicate(timeout=30)
+                    process.wait(timeout=30)
+                    
+                    # 출력 스레드 완료 대기
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
                     
                     # 취소 확인
                     cancelled = any(self.cancel_flags[device_id].is_set() for device_id in device_ids)
                     if cancelled:
-                        self.log(f"[그룹: {','.join(device_ids)}] 실행 취소됨", "red")
+                        self.log(f"[그룹: {group_label}] 실행 취소됨", "red")
                         return
                     
-                    if stdout:
-                        self.log(f"[그룹: {','.join(device_ids)}] 출력:\n{stdout}")
-                    if stderr:
-                        self.log(f"[그룹: {','.join(device_ids)}] 에러:\n{stderr}")
+                    if process.returncode == 0:
+                        self.log(f"[그룹: {group_label}] 완료")
+                    else:
+                        self.log(f"[그룹: {group_label}] 종료 코드: {process.returncode}")
                         
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    self.log(f"[그룹: {','.join(device_ids)}] 타임아웃: 명령 실행 시간 초과")
+                    self.log(f"[그룹: {group_label}] 타임아웃: 명령 실행 시간 초과")
                     
             except Exception as e:
-                self.log(f"[그룹: {','.join(device_ids)}] 실행 실패: {str(e)}")
+                self.log(f"[그룹: {group_label}] 실행 실패: {str(e)}")
             finally:
                 # 프로세스 정리
                 for device_id in device_ids:
@@ -712,25 +770,52 @@ class ADBManager:
                     stderr=subprocess.PIPE,
                     text=True,
                     shell=True,
-                    encoding='utf-8'
+                    encoding='utf-8',
+                    bufsize=1,  # 라인 버퍼링
+                    universal_newlines=True
                 )
                 
                 # 프로세스 등록
                 self.running_processes[device_id] = process
                 
+                # 실시간 출력 읽기
+                def read_output(pipe, prefix):
+                    try:
+                        for line in iter(pipe.readline, ''):
+                            if line:
+                                self.log(f"[{device_id}] {prefix}: {line.rstrip()}")
+                            # 취소 확인
+                            if self.cancel_flags.get(device_id) and self.cancel_flags[device_id].is_set():
+                                break
+                    except Exception as e:
+                        self.log(f"[{device_id}] 출력 읽기 오류: {str(e)}")
+                    finally:
+                        pipe.close()
+                
+                # stdout, stderr를 별도 스레드로 읽기
+                stdout_thread = threading.Thread(target=read_output, args=(process.stdout, "OUT"), daemon=True)
+                stderr_thread = threading.Thread(target=read_output, args=(process.stderr, "ERR"), daemon=True)
+                
+                stdout_thread.start()
+                stderr_thread.start()
+                
                 # 프로세스 완료 대기 (30초 타임아웃)
                 try:
-                    stdout, stderr = process.communicate(timeout=30)
+                    process.wait(timeout=30)
+                    
+                    # 출력 스레드 완료 대기
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
                     
                     # 취소 확인
                     if self.cancel_flags[device_id].is_set():
                         self.log(f"[{device_id}] 실행 취소됨", "red")
                         continue
                     
-                    if stdout:
-                        self.log(f"[{device_id}] 출력:\n{stdout}")
-                    if stderr:
-                        self.log(f"[{device_id}] 에러:\n{stderr}")
+                    if process.returncode == 0:
+                        self.log(f"[{device_id}] 완료")
+                    else:
+                        self.log(f"[{device_id}] 종료 코드: {process.returncode}")
                         
                 except subprocess.TimeoutExpired:
                     process.kill()
@@ -766,25 +851,52 @@ class ADBManager:
                     stderr=subprocess.PIPE,
                     text=True,
                     shell=True,
-                    encoding='utf-8'
+                    encoding='utf-8',
+                    bufsize=1,  # 라인 버퍼링
+                    universal_newlines=True
                 )
                 
                 # 프로세스 등록
                 self.running_processes[device_id] = process
                 
+                # 실시간 출력 읽기
+                def read_output(pipe, prefix):
+                    try:
+                        for line in iter(pipe.readline, ''):
+                            if line:
+                                self.log(f"[{device_id}] {prefix}: {line.rstrip()}")
+                            # 취소 확인
+                            if self.cancel_flags.get(device_id) and self.cancel_flags[device_id].is_set():
+                                break
+                    except Exception as e:
+                        self.log(f"[{device_id}] 출력 읽기 오류: {str(e)}")
+                    finally:
+                        pipe.close()
+                
+                # stdout, stderr를 별도 스레드로 읽기
+                stdout_thread = threading.Thread(target=read_output, args=(process.stdout, "OUT"), daemon=True)
+                stderr_thread = threading.Thread(target=read_output, args=(process.stderr, "ERR"), daemon=True)
+                
+                stdout_thread.start()
+                stderr_thread.start()
+                
                 # 프로세스 완료 대기
                 try:
-                    stdout, stderr = process.communicate(timeout=30)
+                    process.wait(timeout=30)
+                    
+                    # 출력 스레드 완료 대기
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
                     
                     # 취소 확인
                     if self.cancel_flags[device_id].is_set():
                         self.log(f"[{device_id}] 실행 취소됨", "red")
                         return
                     
-                    if stdout:
-                        self.log(f"[{device_id}] 출력:\n{stdout}")
-                    if stderr:
-                        self.log(f"[{device_id}] 에러:\n{stderr}")
+                    if process.returncode == 0:
+                        self.log(f"[{device_id}] 완료")
+                    else:
+                        self.log(f"[{device_id}] 종료 코드: {process.returncode}")
                         
                 except subprocess.TimeoutExpired:
                     process.kill()

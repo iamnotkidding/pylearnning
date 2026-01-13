@@ -456,3 +456,187 @@ await manager.executeCommand(
     device.id
 );
 ```
+
+## Stop 기능 (TypeScript)
+
+실행 중인 모든 명령을 중지하는 기능을 제공합니다.
+
+### 메서드
+
+#### `stopAllCommands(): void`
+실행 중인 모든 ADB 명령을 중지합니다.
+
+```typescript
+const manager = new ADBManager();
+
+// 명령 실행
+await manager.executeCommand('adb -s [ADBID] logcat', 'All Devices');
+
+// 다른 곳에서 중지
+manager.stopAllCommands();
+```
+
+#### `hasRunningProcesses(): boolean`
+실행 중인 프로세스가 있는지 확인합니다.
+
+```typescript
+if (manager.hasRunningProcesses()) {
+    console.log('명령 실행 중...');
+    manager.stopAllCommands();
+} else {
+    console.log('실행 중인 명령이 없습니다.');
+}
+```
+
+### 사용 예시
+
+**무한 로그 모니터링 중지:**
+```typescript
+// 로그캣 시작
+const logPromise = manager.executeCommand(
+    'adb -s [ADBID] logcat',
+    device.id
+);
+
+// 10초 후 중지
+setTimeout(() => {
+    manager.stopAllCommands();
+}, 10000);
+```
+
+**조건부 중지:**
+```typescript
+// 특정 조건에서 중지
+process.on('SIGINT', () => {
+    console.log('중단 신호 받음');
+    manager.stopAllCommands();
+    process.exit(0);
+});
+```
+
+### 구현 세부사항
+
+- SIGTERM 신호를 먼저 전송하여 정상 종료 시도
+- 2초 후에도 종료되지 않으면 SIGKILL로 강제 종료
+- 모든 프로세스 정보를 Map에서 제거
+
+## Stop 기능 (TypeScript)
+
+TypeScript 버전에서도 실행 중인 명령을 중지할 수 있습니다.
+
+### API
+
+#### stopAllCommands()
+모든 실행 중인 명령을 중지합니다.
+
+```typescript
+const manager = new ADBManager();
+
+// 명령 실행
+manager.executeCommand('adb -s [ADBID] logcat', 'All Devices');
+
+// 중지
+manager.stopAllCommands();
+```
+
+#### stopDeviceCommand(deviceId: string)
+특정 장치의 명령만 중지합니다.
+
+```typescript
+// 특정 장치 중지
+manager.stopDeviceCommand('emulator-5554');
+```
+
+#### getRunningProcessCount()
+현재 실행 중인 프로세스 수를 반환합니다.
+
+```typescript
+const count = manager.getRunningProcessCount();
+console.log(`실행 중인 명령: ${count}개`);
+
+if (count > 0) {
+    manager.stopAllCommands();
+}
+```
+
+### 사용 예시
+
+#### 타임아웃 구현
+```typescript
+const manager = new ADBManager();
+
+// 명령 실행
+const commandPromise = manager.executeCommand(
+    'adb -s [ADBID] logcat',
+    device.id
+);
+
+// 10초 타임아웃
+const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+        manager.stopAllCommands();
+        reject(new Error('타임아웃'));
+    }, 10000);
+});
+
+try {
+    await Promise.race([commandPromise, timeoutPromise]);
+} catch (error) {
+    console.error('명령 실행 실패:', error);
+}
+```
+
+#### 사용자 인터럽트
+```typescript
+const manager = new ADBManager();
+
+// Ctrl+C 핸들러
+process.on('SIGINT', () => {
+    console.log('\n명령 중지 중...');
+    manager.stopAllCommands();
+    process.exit(0);
+});
+
+await manager.executeCommand('adb -s [ADBID] logcat', device.id);
+```
+
+#### 웹 서버에서 사용
+```typescript
+import express from 'express';
+
+const app = express();
+const manager = new ADBManager();
+
+// 명령 실행 엔드포인트
+app.post('/execute', async (req, res) => {
+    const { command, deviceId } = req.body;
+    manager.executeCommand(command, deviceId);
+    res.json({ status: 'started' });
+});
+
+// 중지 엔드포인트
+app.post('/stop', (req, res) => {
+    manager.stopAllCommands();
+    res.json({ status: 'stopped' });
+});
+
+// 상태 확인 엔드포인트
+app.get('/status', (req, res) => {
+    res.json({
+        running: manager.getRunningProcessCount()
+    });
+});
+```
+
+### 시그널
+
+- **SIGTERM**: 프로세스에 종료 시그널 전송
+- **SIGKILL**: SIGTERM이 작동하지 않을 경우 강제 종료 (필요시 사용)
+
+```typescript
+// 강제 종료가 필요한 경우
+const processInfo = manager.runningProcesses.get(deviceId);
+if (processInfo) {
+    processInfo.process.kill('SIGKILL'); // 강제 종료
+}
+```

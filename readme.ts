@@ -422,3 +422,37 @@ await manager.executeCommand(
 - `use_custom_adb_path`가 `false`면 `adb_path` 값은 무시됩니다
 - `testtime`과 `pair_count`는 UI에서 변경 가능하며, 여기서는 초기값만 지정합니다
 - settings 섹션을 생략하면 모든 값이 기본값으로 설정됩니다
+
+## 실시간 출력
+
+TypeScript 버전에서도 명령 실행 결과를 실시간으로 출력합니다.
+
+### 출력 형식
+
+```
+[emulator-5554] OUT: 출력 라인
+[emulator-5554] ERR: 에러 라인
+[emulator-5554] 완료
+```
+
+### 구현
+
+- `spawn`을 사용하여 프로세스 스트림을 실시간 처리
+- stdout과 stderr를 라인 단위로 분리하여 출력
+- 빈 줄은 자동으로 필터링
+
+### 사용 예시
+
+```typescript
+// 실시간 로그 모니터링
+await manager.executeCommand(
+    'adb -s [ADBID] logcat',
+    device.id
+);
+
+// 파일 다운로드 진행률
+await manager.executeCommand(
+    'adb -s [ADBID] pull /sdcard/large_file.zip .',
+    device.id
+);
+```

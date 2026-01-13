@@ -319,10 +319,14 @@ class ADBManager {
         // ADB 경로 적용
         cmd = this.getAdbCommand(cmd);
 
-        console.log(`\n[그룹: ${deviceIds.join(',')}] 실행: ${cmd}`);
+        const groupLabel = deviceIds.join(',');
+        console.log(`\n[그룹: ${groupLabel}] 실행: ${cmd}`);
 
         return new Promise((resolve, reject) => {
-            const process = exec(cmd, { encoding: 'utf-8', timeout: 30000 });
+            const process = spawn(cmd, {
+                shell: true,
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
 
             // 프로세스 등록
             const processInfo: RunningProcess = { process, deviceIds };
@@ -330,15 +334,23 @@ class ADBManager {
                 this.runningProcesses.set(deviceId, processInfo);
             }
 
-            let stdout = '';
-            let stderr = '';
-
+            // 실시간 출력
             process.stdout?.on('data', (data) => {
-                stdout += data;
+                const lines = data.toString().split('\n');
+                lines.forEach((line: string) => {
+                    if (line.trim()) {
+                        console.log(`[그룹: ${groupLabel}] OUT: ${line}`);
+                    }
+                });
             });
 
             process.stderr?.on('data', (data) => {
-                stderr += data;
+                const lines = data.toString().split('\n');
+                lines.forEach((line: string) => {
+                    if (line.trim()) {
+                        console.log(`[그룹: ${groupLabel}] ERR: ${line}`);
+                    }
+                });
             });
 
             process.on('close', (code) => {
@@ -347,18 +359,17 @@ class ADBManager {
                     this.runningProcesses.delete(deviceId);
                 }
 
-                if (stdout) {
-                    console.log(`[그룹: ${deviceIds.join(',')}] 출력:\n${stdout}`);
-                }
-                if (stderr) {
-                    console.log(`[그룹: ${deviceIds.join(',')}] 에러:\n${stderr}`);
+                if (code === 0) {
+                    console.log(`[그룹: ${groupLabel}] 완료`);
+                } else {
+                    console.log(`[그룹: ${groupLabel}] 종료 코드: ${code}`);
                 }
 
                 resolve();
             });
 
             process.on('error', (error) => {
-                console.error(`[그룹: ${deviceIds.join(',')}] 실행 실패:`, error);
+                console.error(`[그룹: ${groupLabel}] 실행 실패:`, error);
                 for (const deviceId of deviceIds) {
                     this.runningProcesses.delete(deviceId);
                 }
@@ -441,7 +452,10 @@ class ADBManager {
         console.log(`\n[${deviceId}] 실행: ${cmd}`);
 
         return new Promise((resolve, reject) => {
-            const process = exec(cmd, { encoding: 'utf-8', timeout: 30000 });
+            const process = spawn(cmd, {
+                shell: true,
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
 
             // 프로세스 등록
             this.runningProcesses.set(deviceId, {
@@ -449,25 +463,32 @@ class ADBManager {
                 deviceIds: [deviceId]
             });
 
-            let stdout = '';
-            let stderr = '';
-
+            // 실시간 출력
             process.stdout?.on('data', (data) => {
-                stdout += data;
+                const lines = data.toString().split('\n');
+                lines.forEach((line: string) => {
+                    if (line.trim()) {
+                        console.log(`[${deviceId}] OUT: ${line}`);
+                    }
+                });
             });
 
             process.stderr?.on('data', (data) => {
-                stderr += data;
+                const lines = data.toString().split('\n');
+                lines.forEach((line: string) => {
+                    if (line.trim()) {
+                        console.log(`[${deviceId}] ERR: ${line}`);
+                    }
+                });
             });
 
             process.on('close', (code) => {
                 this.runningProcesses.delete(deviceId);
-
-                if (stdout) {
-                    console.log(`[${deviceId}] 출력:\n${stdout}`);
-                }
-                if (stderr) {
-                    console.log(`[${deviceId}] 에러:\n${stderr}`);
+                
+                if (code === 0) {
+                    console.log(`[${deviceId}] 완료`);
+                } else {
+                    console.log(`[${deviceId}] 종료 코드: ${code}`);
                 }
 
                 resolve();

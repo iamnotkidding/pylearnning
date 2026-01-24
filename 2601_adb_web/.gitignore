@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# APK 파일 및 설정
+apks/
+*.apk
+apk-config.json
+
+# 환경 변수
+.env
+.env.local
+
+# 로그 파일
+*.log
+logs/
+
+# OS 파일
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 임시 파일
+tmp/
+temp/
+*.tmp
